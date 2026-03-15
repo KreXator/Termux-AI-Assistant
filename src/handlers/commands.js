@@ -77,7 +77,10 @@ async function handleStatus(bot, msg) {
     `Active model: \`${cfg.model}\`\n` +
     `Persona: ${cfg.persona}\n` +
     `Available models: ${models.length ? models.join(', ') : 'none detected'}\n` +
-    `Router: small=\`${router.MODEL_SMALL}\` large=\`${router.MODEL_LARGE}\``
+    `Router:\n` +
+    `  ⚡ small=\`${router.MODEL_SMALL}\`\n` +
+    `  🧠 medium=\`${router.MODEL_MEDIUM}\`\n` +
+    `  💻 large=\`${router.MODEL_LARGE}\``
   );
 }
 
@@ -215,9 +218,8 @@ async function handleMessage(bot, msg) {
   await bot.sendChatAction(msg.chat.id, 'typing');
 
   const cfg         = db.getConfig(userId);
-  const manualModel = cfg.model !== router.MODEL_SMALL && cfg.model !== router.MODEL_LARGE
-    ? cfg.model   // user manually set a different model
-    : null;
+  const isAutoModel = [router.MODEL_SMALL, router.MODEL_MEDIUM, router.MODEL_LARGE].includes(cfg.model);
+  const manualModel = !isAutoModel ? cfg.model : null;
 
   // Decide: web search needed?
   const needsSearch = /\b(search|wyszukaj|google|find|znajdź).+\b/i.test(text) ||
@@ -241,8 +243,8 @@ async function handleMessage(bot, msg) {
       model,
       persona: cfg.persona,
     });
-    // Prefix with model label only for complex (large) calls
-    const prefixed = model === router.MODEL_LARGE ? `${label}\n\n${reply}` : reply;
+    // Prefix with model label only for non-small calls, so user knows which model answered
+    const prefixed = model !== router.MODEL_SMALL ? `${label}\n\n${reply}` : reply;
     await sendLong(bot, msg.chat.id, prefixed);
   } catch (err) {
     const errMsg = err.code === 'ECONNREFUSED'
