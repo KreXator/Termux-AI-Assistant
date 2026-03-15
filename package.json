@@ -1,0 +1,23 @@
+{
+    "name":  "termux-ai-assistant",
+    "version":  "1.0.0",
+    "description":  "",
+    "main":  "index.js",
+    "scripts":  {
+                    "start":  "node index.js",
+                    "dev":  "node --watch index.js"
+                },
+    "keywords":  [
+
+                 ],
+    "author":  "",
+    "license":  "ISC",
+    "type":  "commonjs",
+    "dependencies":  {
+                         "axios":  "^1.13.6",
+                         "dotenv":  "^17.3.1",
+                         "duck-duck-scrape":  "^2.2.7",
+                         "lowdb":  "^7.0.1",
+                         "node-telegram-bot-api":  "^0.67.0"
+                     }
+}
