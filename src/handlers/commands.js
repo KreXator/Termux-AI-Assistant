@@ -38,7 +38,7 @@ async function sendLong(bot, chatId, text, opts = {}) {
 // ─── Command Handlers ────────────────────────────────────────────────────────
 
 async function handleStart(bot, msg) {
-  const name = msg.from.first_name || 'User';
+  const name = msg.from?.first_name || 'User';
   await sendLong(bot, msg.chat.id,
     `👋 Hi ${name}! I'm your local AI assistant running on Ollama.\n\n` +
     `Type anything to chat. Available commands:\n\n` +
@@ -261,6 +261,7 @@ function register(bot) {
   // Middleware: auth check
   function guard(handler) {
     return async (msg, match) => {
+      if (!msg || !msg.chat || !msg.from) return;
       if (!isAllowed(msg.from.id)) {
         return bot.sendMessage(msg.chat.id, '🚫 Unauthorized.');
       }
