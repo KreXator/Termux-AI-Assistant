@@ -261,7 +261,10 @@ function register(bot) {
   // Middleware: auth check
   function guard(handler) {
     return async (msg, match) => {
-      if (!msg || !msg.chat || !msg.from) return;
+      // Telegram w niektórych typach zdarzeń (np. my_chat_member)
+      // nie wysyła pełnego obiektu message, wyłapujemy to, by uniknąć crash'u.
+      if (!msg || !msg.chat || !msg.chat.id || !msg.from) return;
+
       if (!isAllowed(msg.from.id)) {
         return bot.sendMessage(msg.chat.id, '🚫 Unauthorized.');
       }
