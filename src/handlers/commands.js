@@ -237,20 +237,31 @@ async function handleMessage(bot, msg) {
   const label = router.modelLabel(model);
 
   try {
+    // ☕ Send a placeholder message because large/new models take a bit to load into RAM
+    const loadingMsg = await bot.sendMessage(msg.chat.id, `⏳ *Wczytywanie modelu \`${model}\`...*\nPierwsze wywołanie zajmuje więcej czasu na telefonie.`);
+
+    // Keep sending 'typing' action every 5 seconds since it expires after ~5s in Telegram
+    const typingInterval = setInterval(() => bot.sendChatAction(msg.chat.id, 'typing'), 5000);
+
     const reply = await ollama.chat({
       userId,
       userMessage: enriched,
       model,
       persona: cfg.persona,
     });
+
+    clearInterval(typingInterval);
+    await bot.deleteMessage(msg.chat.id, loadingMsg.message_id).catch(() => {});
+
     // Prefix with model label only for non-small calls, so user knows which model answered
     const prefixed = model !== router.MODEL_SMALL ? `${label}\n\n${reply}` : reply;
     await sendLong(bot, msg.chat.id, prefixed);
   } catch (err) {
-    const errMsg = err.code === 'ECONNREFUSED'
-      ? '❌ Cannot reach Ollama. Make sure it is running in Termux: `ollama serve`'
-      : `❌ Error: ${err.message}`;
-    await bot.sendMessage(msg.chat.id, errMsg);
+    let errMsg = `❌ Error: ${err.message}`;
+    if (err.code === 'ECONNREFUSED') errMsg = '❌ Cannot reach Ollama. Start it with: `ollama serve`';
+    if (err.code === 'ECONNABORTED' || err.message.includes('timeout')) errMsg = `⏱️ *Timeout!* Model \`${model}\` jest zbyt duży lub telefon go nie ogarnął w 120s. Użyj lżejszego modelu mniejszego (komenda /model).`;
+
+    await bot.sendMessage(msg.chat.id, errMsg, { parse_mode: 'Markdown' });
   }
 }
 

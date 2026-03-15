@@ -43,8 +43,9 @@ async function main() {
   });
 
   console.log('🤖 Termux AI Assistant is running. Send /start on Telegram.');
-  console.log(`   Small model : ${process.env.MODEL_SMALL || 'llama3.2:3b'}`);
-  console.log(`   Large model : ${process.env.MODEL_LARGE || 'llama3:8b'}`);
+  console.log(`   Small model  (⚡): ${process.env.MODEL_SMALL || 'gemma2:2b'}`);
+  console.log(`   Medium model (🧠): ${process.env.MODEL_MEDIUM || 'llama3.1:8b'}`);
+  console.log(`   Large model  (💻): ${process.env.MODEL_LARGE || 'qwen2.5-coder:7b'}`);
 }
 
 main().catch(err => {
