@@ -149,7 +149,7 @@ function setConfig(userId, updates) {
 
 module.exports = {
   // history
-  getHistory, appendMessage, clearHistory,
+  getHistory, saveHistory, appendMessage, clearHistory,
   // memory
   getMemory, addMemory, forgetAll,
   // notes
