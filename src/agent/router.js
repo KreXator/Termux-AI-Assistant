@@ -40,6 +40,24 @@ const MEDIUM_PATTERNS = [
   /oceń/i, /assess\b/i,
 ];
 
+// ── Polish content → MEDIUM (3B model hallucinates badly in Polish) ───────────
+// Triggered by: Polish diacritics + substantive length, or common Polish
+// question/request words that indicate the user wants a real answer.
+const POLISH_PATTERNS = [
+  /\b(przepis|składniki|przygotowanie|gotow)\b/i,   // recipes
+  /\b(jak\s+\w+|co\s+to\s+jest|czym\s+jest)\b/i,   // how/what questions
+  /\b(powiedz|wyjaśnij|opisz|napisz|podaj)\b/i,     // requests
+  /\b(dlaczego|kiedy|gdzie|który|która)\b/i,         // WH-questions
+  /\b(pomóż|pomoz|proszę|prosze)\b/i,               // please/help
+  /\b(jakie|jaką|jakim|jaki)\b/i,                   // what kind of
+];
+
+// Detect substantive Polish text: has diacritics AND is long enough to matter
+function isPolishContent(text) {
+  const hasDiacritics = /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/.test(text);
+  return hasDiacritics && text.length > 30;
+}
+
 // ── Simple patterns → always SMALL ────────────────────────────────────────────
 const SIMPLE_PATTERNS = [
   new RegExp('^\\/?(?:note|notes|notat[ak]i?)\\b', 'i'),
@@ -72,6 +90,10 @@ function routeModel(message, override = null) {
   // Analysis / longer texts → medium
   if (MEDIUM_PATTERNS.some(p => p.test(text))) return MODEL_MEDIUM;
   if (text.length > 300) return MODEL_MEDIUM;
+
+  // Substantive Polish content → medium (3B hallucinates badly in Polish)
+  if (POLISH_PATTERNS.some(p => p.test(text))) return MODEL_MEDIUM;
+  if (isPolishContent(text)) return MODEL_MEDIUM;
 
   // Everything else → small (fast)
   return MODEL_SMALL;
