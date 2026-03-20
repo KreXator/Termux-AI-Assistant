@@ -5,9 +5,10 @@
  */
 'use strict';
 
-const db        = require('../db/database');
-const llm       = require('../llm/client');
-const router    = require('../agent/router');
+const db         = require('../db/database');
+const llm        = require('../llm/client');
+const openrouter = require('../llm/openrouter');
+const router     = require('../agent/router');
 const search    = require('../tools/search');
 const coder     = require('../tools/coder');
 const scheduler = require('../scheduler/scheduler');
@@ -52,7 +53,7 @@ async function handleStart(bot, msg) {
     `/status — system status\n` +
     `/clear — clear conversation context\n\n` +
     `*Models & Persona*\n` +
-    `/model [name|auto] — switch model or re-enable auto-routing\n` +
+    `/model [name|auto|premium] — switch model or re-enable auto-routing\n` +
     `/models — list available models\n` +
     `/persona [name] — change personality (default/coder/polish/researcher/planner)\n` +
     `/instruct [text] — set a custom system instruction\n` +
@@ -132,20 +133,30 @@ async function handleClear(bot, msg) {
 
 // ─── Model & Persona ─────────────────────────────────────────────────────────
 
+// Named model aliases — resolved to actual model IDs before storing
+const MODEL_ALIASES = {
+  premium: openrouter.OR_MODEL_PREMIUM,
+  large:   openrouter.OR_MODEL_LARGE,
+  medium:  openrouter.OR_MODEL_MEDIUM,
+  small:   openrouter.OR_MODEL_SMALL,
+};
+
 async function handleModel(bot, msg, args) {
   const userId = msg.from.id;
   if (!args.length) {
     const cfg = db.getConfig(userId);
     return bot.sendMessage(msg.chat.id,
       `Current model: \`${cfg.model}\` ${cfg.manualModel ? '_(manual override)_' : '_(auto-routed)_'}\n` +
-      `Use \`/model auto\` to re-enable auto-routing.`
+      `Use \`/model auto\` to re-enable auto-routing.\n` +
+      `Use \`/model premium\` to switch to the paid model.`
     );
   }
-  const modelName = args.join(' ');
-  if (modelName === 'auto') {
+  const input     = args.join(' ').toLowerCase();
+  if (input === 'auto') {
     db.setConfig(userId, { model: router.MODEL_SMALL, manualModel: false });
     return bot.sendMessage(msg.chat.id, '✅ Auto-routing re-enabled.');
   }
+  const modelName = MODEL_ALIASES[input] || args.join(' ');
   db.setConfig(userId, { model: modelName, manualModel: true });
   await bot.sendMessage(msg.chat.id,
     `✅ Model switched to \`${modelName}\`. Auto-routing disabled.\nUse \`/model auto\` to re-enable.`

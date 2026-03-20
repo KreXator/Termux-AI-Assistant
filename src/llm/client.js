@@ -100,10 +100,11 @@ async function listModels() {
   if (process.env.OPENROUTER_API_KEY) {
     const orAlive = await openrouter.isReachable();
     lines.push(`*OpenRouter* (${orAlive ? 'online — primary' : 'offline'})`);
-    lines.push(`  Small : \`${openrouter.OR_MODEL_SMALL}\``);
-    lines.push(`  Medium: \`${openrouter.OR_MODEL_MEDIUM}\``);
-    lines.push(`  Large : \`${openrouter.OR_MODEL_LARGE}\``);
-    lines.push(`  Vision: \`${openrouter.OR_VISION_MODEL}\``);
+    lines.push(`  Small  : \`${openrouter.OR_MODEL_SMALL}\``);
+    lines.push(`  Medium : \`${openrouter.OR_MODEL_MEDIUM}\``);
+    lines.push(`  Large  : \`${openrouter.OR_MODEL_LARGE}\``);
+    lines.push(`  Vision : \`${openrouter.OR_VISION_MODEL}\``);
+    lines.push(`  Premium: \`${openrouter.OR_MODEL_PREMIUM}\` ← /model premium`);
     lines.push('');
     lines.push(`*Ollama* (fallback)`);
   } else {

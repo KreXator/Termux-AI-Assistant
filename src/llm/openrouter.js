@@ -21,10 +21,15 @@ const MODEL_MEDIUM = process.env.MODEL_MEDIUM || 'qwen2.5:7b-instruct-q4_K_M';
 const MODEL_LARGE  = process.env.MODEL_LARGE  || 'qwen3:8b';
 
 // OpenRouter free model defaults (overridable via env)
-const OR_MODEL_SMALL   = process.env.OR_MODEL_SMALL   || 'meta-llama/llama-3.2-3b-instruct:free';
-const OR_MODEL_MEDIUM  = process.env.OR_MODEL_MEDIUM  || 'mistralai/mistral-small-3.1-24b-instruct:free';
-const OR_MODEL_LARGE   = process.env.OR_MODEL_LARGE   || 'meta-llama/llama-3.3-70b-instruct:free';
+// Hosted by Google AI Studio / Nvidia — reliable, no Venice rate limits
+const OR_MODEL_SMALL   = process.env.OR_MODEL_SMALL   || 'google/gemma-3-4b-it:free';
+const OR_MODEL_MEDIUM  = process.env.OR_MODEL_MEDIUM  || 'google/gemma-3-12b-it:free';
+const OR_MODEL_LARGE   = process.env.OR_MODEL_LARGE   || 'google/gemma-3-27b-it:free';
 const OR_VISION_MODEL  = process.env.OR_VISION_MODEL  || 'google/gemma-3-12b-it:free';
+
+// Optional paid model — manually selectable via /model premium
+// Best price/quality for a personal assistant ($0.40/M out, 1M ctx, excellent Polish)
+const OR_MODEL_PREMIUM = process.env.OR_MODEL_PREMIUM || 'google/gemini-2.5-flash-lite';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -141,4 +146,5 @@ module.exports = {
   OR_MODEL_MEDIUM,
   OR_MODEL_LARGE,
   OR_VISION_MODEL,
+  OR_MODEL_PREMIUM,
 };
