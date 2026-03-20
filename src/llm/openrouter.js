@@ -58,6 +58,22 @@ function mapModel(localModel) {
 // ─── Chat completion ──────────────────────────────────────────────────────────
 
 /**
+ * Google AI Studio (Gemma) rejects the 'system' role ("Developer instruction is not enabled").
+ * Convert system message → user/assistant handshake so the instruction still reaches the model.
+ */
+function injectSystemAsUser(messages) {
+  const sysIdx = messages.findIndex(m => m.role === 'system');
+  if (sysIdx === -1) return messages;
+  const sysContent = messages[sysIdx].content;
+  const rest = messages.filter((_, i) => i !== sysIdx);
+  return [
+    { role: 'user',      content: sysContent   },
+    { role: 'assistant', content: 'Understood.' },
+    ...rest,
+  ];
+}
+
+/**
  * Send a messages array to OpenRouter and return the assistant reply text.
  * @param {string} localModel  — local tier name (mapped internally to OR model)
  * @param {Array<{role, content}>} messages
@@ -66,14 +82,15 @@ function mapModel(localModel) {
 async function complete(localModel, messages) {
   if (!OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY not set');
 
-  const orModel = mapModel(localModel);
-  console.log(`[openrouter] calling model=${orModel}, messages=${messages.length}`);
+  const orModel   = mapModel(localModel);
+  const normalized = injectSystemAsUser(messages);
+  console.log(`[openrouter] calling model=${orModel}, messages=${normalized.length}`);
 
   let res;
   try {
     res = await axios.post(`${BASE_URL}/chat/completions`, {
       model:    orModel,
-      messages,
+      messages: normalized,
     }, {
       timeout: 180_000,
       headers: orHeaders(),
