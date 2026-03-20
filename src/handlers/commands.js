@@ -11,6 +11,10 @@ const router    = require('../agent/router');
 const search    = require('../tools/search');
 const coder     = require('../tools/coder');
 const scheduler = require('../scheduler/scheduler');
+const reminder  = require('../tools/reminder');
+const weather   = require('../tools/weather');
+const voice     = require('../tools/voice');
+const vision    = require('../tools/vision');
 
 const ALLOWED_IDS = (process.env.ALLOWED_USER_IDS || '')
   .split(',').map(s => s.trim()).filter(Boolean).map(Number);
@@ -72,6 +76,16 @@ async function handleStart(bot, msg) {
     `/schedule add HH:MM [query] — add daily search alert\n` +
     `/schedule test [n] — run schedule #n right now\n` +
     `/schedule del [n] — remove schedule #n\n\n` +
+    `*Reminders*\n` +
+    `/remind [when] [text] — set a one-time reminder\n` +
+    `  when: 30min · 2h · 45s · 17:30\n` +
+    `/reminders — list your active reminders\n` +
+    `/remindel [n] — cancel reminder #n\n\n` +
+    `*Weather*\n` +
+    `/weather [city] — current weather\n\n` +
+    `*Media*\n` +
+    `Send a 🎤 voice message — I'll transcribe it\n` +
+    `Send a 📷 photo — I'll describe it\n\n` +
     `*Dev*\n` +
     `/run [code] — execute JS code`
   );
@@ -373,6 +387,145 @@ async function handleRun(bot, msg, args) {
   await sendLong(bot, msg.chat.id, coder.formatResult(result));
 }
 
+// ─── Reminders ───────────────────────────────────────────────────────────────
+
+async function handleRemind(bot, msg, args) {
+  const chatId  = msg.chat.id;
+  const userId  = msg.from.id;
+
+  if (!args.length)
+    return bot.sendMessage(chatId,
+      'Usage: `/remind [when] [message]`\n' +
+      'Examples:\n  `/remind 30min call John`\n  `/remind 2h drink water`\n  `/remind 17:30 meeting`',
+      { parse_mode: 'Markdown' }
+    );
+
+  const delayMs = reminder.parseTime(args[0]);
+  if (delayMs === null)
+    return bot.sendMessage(chatId,
+      `❌ Cannot parse time: \`${args[0]}\`\n` +
+      'Accepted: `30min`, `2h`, `45s`, `17:30`',
+      { parse_mode: 'Markdown' }
+    );
+
+  const text = args.slice(1).join(' ') || 'Reminder!';
+  const info = reminder.add(bot, chatId, userId, text, delayMs);
+
+  await bot.sendMessage(chatId,
+    `⏰ Reminder set!\n` +
+    `📝 _${text}_\n` +
+    `🕐 Fires in *${info.inMs}*`,
+    { parse_mode: 'Markdown' }
+  );
+}
+
+async function handleReminders(bot, msg) {
+  const chatId = msg.chat.id;
+  const list   = reminder.list(msg.from.id);
+  if (!list.length)
+    return bot.sendMessage(chatId, 'No active reminders. Use `/remind [when] [text]` to add one.', { parse_mode: 'Markdown' });
+
+  const lines = list.map((r, i) => {
+    const fireAt = new Date(r.fireAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return `${i + 1}. ⏰ *${fireAt}* — _${r.text}_`;
+  }).join('\n');
+
+  await sendLong(bot, chatId, `⏰ *Active reminders:*\n\n${lines}\n\nUse \`/remindel [n]\` to cancel.`);
+}
+
+async function handleReminderDel(bot, msg, args) {
+  const chatId = msg.chat.id;
+  const n = parseInt(args[0], 10);
+  if (isNaN(n) || n < 1)
+    return bot.sendMessage(chatId, 'Usage: /remindel [reminder number]');
+  const text = reminder.cancel(msg.from.id, n);
+  if (!text)
+    return bot.sendMessage(chatId, `❌ No reminder #${n}. Use /reminders to see your list.`);
+  await bot.sendMessage(chatId, `🗑 Reminder #${n} cancelled: _${text}_`, { parse_mode: 'Markdown' });
+}
+
+// ─── Weather ─────────────────────────────────────────────────────────────────
+
+async function handleWeather(bot, msg, args) {
+  const chatId = msg.chat.id;
+  if (!args.length)
+    return bot.sendMessage(chatId, 'Usage: /weather [city]\nExample: `/weather Warsaw`', { parse_mode: 'Markdown' });
+
+  await bot.sendChatAction(chatId, 'typing');
+  try {
+    const result = await weather.getWeather(args.join(' '));
+    await sendLong(bot, chatId, result);
+  } catch (err) {
+    await bot.sendMessage(chatId, `❌ Weather error: ${err.message}`);
+  }
+}
+
+// ─── Voice Transcription ──────────────────────────────────────────────────────
+
+async function handleVoice(bot, msg) {
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  if (!process.env.GROQ_API_KEY) {
+    return bot.sendMessage(chatId,
+      '⚠️ Voice transcription requires `GROQ_API_KEY` in `.env`.\nGet a free key at groq.com.',
+      { parse_mode: 'Markdown' }
+    );
+  }
+
+  await bot.sendChatAction(chatId, 'typing');
+  const waitMsg = await bot.sendMessage(chatId, '🎤 Transcribing...');
+
+  try {
+    const fileId = msg.voice.file_id;
+    const text   = await voice.transcribe(bot, fileId);
+
+    await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
+
+    if (!text) {
+      return bot.sendMessage(chatId, '⚠️ Transcription returned empty. Try speaking more clearly.');
+    }
+
+    // Send transcription then process as normal message
+    await bot.sendMessage(chatId, `🎤 *Transcribed:*\n_${text}_`, { parse_mode: 'Markdown' });
+
+    // Route through AI as if the user typed the message
+    const fakeMsgText = { ...msg, text: text };
+    await handleMessage(bot, fakeMsgText);
+  } catch (err) {
+    await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
+    await bot.sendMessage(chatId, `❌ Transcription failed: ${err.message}`);
+  }
+}
+
+// ─── Image Analysis ───────────────────────────────────────────────────────────
+
+async function handlePhoto(bot, msg) {
+  const chatId   = msg.chat.id;
+  const userId   = msg.from.id;
+
+  // Telegram sends multiple sizes; use the largest
+  const photos   = msg.photo;
+  const largest  = photos[photos.length - 1];
+  const fileId   = largest.file_id;
+  const caption  = msg.caption?.trim() || 'Describe this image in detail.';
+
+  await bot.sendChatAction(chatId, 'upload_photo');
+  const waitMsg = await bot.sendMessage(chatId, `🔍 Analyzing image with \`${vision.VISION_MODEL}\`...`, { parse_mode: 'Markdown' });
+
+  try {
+    const description = await vision.analyzeImage(bot, fileId, caption);
+    await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
+    await sendLong(bot, chatId, `🖼 *Image analysis:*\n\n${description}`);
+  } catch (err) {
+    await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
+    let errMsg = `❌ Vision error: ${err.message}`;
+    if (err.code === 'ECONNREFUSED')
+      errMsg = `❌ Ollama not running. Start it with \`ollama serve\`, then pull \`${vision.VISION_MODEL}\`.`;
+    await bot.sendMessage(chatId, errMsg, { parse_mode: 'Markdown' });
+  }
+}
+
 // ─── Plain Message → Agent ───────────────────────────────────────────────────
 
 async function handleMessage(bot, msg) {
@@ -494,7 +647,21 @@ function register(bot) {
   bot.onText(/^\/run(?:\s+([\s\S]+))?$/, guard((m, match) =>
     handleRun(bot, m, match[1] ? [match[1].trim()] : [])));
 
+  bot.onText(/^\/remind(?:\s+([\s\S]+))?$/, guard((m, match) =>
+    handleRemind(bot, m, match[1]?.trim().split(/\s+/) || [])));
+  bot.onText(/^\/reminders?$/, guard(m => handleReminders(bot, m)));
+  bot.onText(/^\/remindel(?:\s+(\d+))?$/, guard((m, match) =>
+    handleReminderDel(bot, m, match[1] ? [match[1]] : [])));
+
+  bot.onText(/^\/weather(?:\s+(.+))?$/, guard((m, match) =>
+    handleWeather(bot, m, match[1]?.trim().split(/\s+/) || [])));
+
   bot.on('message', guard(m => {
+    // Voice message
+    if (m.voice) return handleVoice(bot, m);
+    // Photo message
+    if (m.photo) return handlePhoto(bot, m);
+    // Text commands skip
     if (!m.text || m.text.startsWith('/')) return;
     return handleMessage(bot, m);
   }));
