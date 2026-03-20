@@ -15,6 +15,11 @@ const ollama     = require('./ollama');
 
 const PERSONAS = require('../../config/personas.json');
 
+// Local tier model names (used to build the OR cascade)
+const MODEL_SMALL  = process.env.MODEL_SMALL  || 'qwen2.5:3b-instruct-q4_K_M';
+const MODEL_MEDIUM = process.env.MODEL_MEDIUM || 'qwen2.5:7b-instruct-q4_K_M';
+const MODEL_LARGE  = process.env.MODEL_LARGE  || 'qwen3:8b';
+
 // History limits:
 //   HISTORY_CHARS  — primary limit: total character budget across all messages.
 //                    1 token ≈ 4 chars; 200 000 chars ≈ 50 000 tokens.
@@ -67,6 +72,42 @@ function resolveDisplayModel(localModel) {
   return localModel;
 }
 
+// ─── OpenRouter cascade ───────────────────────────────────────────────────────
+
+/**
+ * Returns the list of local tier models to try in order, starting from `model`.
+ * Small escalates through Medium → Large; Medium → Large; Large stays solo.
+ */
+function buildOrCascade(model) {
+  if (model === MODEL_SMALL)  return [MODEL_SMALL,  MODEL_MEDIUM, MODEL_LARGE];
+  if (model === MODEL_MEDIUM) return [MODEL_MEDIUM, MODEL_LARGE];
+  return [model]; // LARGE or any explicit OR model ID — no escalation
+}
+
+/**
+ * Try OpenRouter with automatic tier escalation on 429.
+ * Small → Medium → Large before giving up and letting Ollama take over.
+ */
+async function tryOpenRouterWithCascade(model, messages) {
+  const candidates = buildOrCascade(model);
+  let lastErr;
+  for (const m of candidates) {
+    try {
+      const reply = await openrouter.complete(m, messages);
+      console.log(`[client] provider=openrouter model=${openrouter.mapModel(m)}`);
+      return reply;
+    } catch (err) {
+      if (err.response?.status === 429) {
+        console.warn(`[client] OR ${openrouter.mapModel(m)} rate-limited (429), trying next tier…`);
+        lastErr = err;
+        continue;
+      }
+      throw err; // non-429 error → surface immediately (triggers Ollama fallback)
+    }
+  }
+  throw lastErr; // all OR tiers exhausted → caller falls back to Ollama
+}
+
 // ─── Main chat call ───────────────────────────────────────────────────────────
 
 /**
@@ -98,17 +139,10 @@ async function chat({ userId, userMessage, model, persona = 'default', customIns
     ...history.map(m => ({ role: m.role, content: m.content })),
   ];
 
-  // 3. Call provider (OR primary, Ollama fallback)
+  // 3. Call provider (OR primary with tier cascade, Ollama fallback)
   let reply;
   if (process.env.OPENROUTER_API_KEY) {
-    try {
-      reply = await openrouter.complete(model, messages);
-      console.log('[client] provider=openrouter');
-    } catch (err) {
-      console.warn('[client] OpenRouter failed, falling back to Ollama:', err.message);
-      reply = await ollama.completeRaw(model, messages);
-      console.log('[client] provider=ollama (fallback)');
-    }
+    reply = await tryOpenRouterWithCascade(model, messages);
   } else {
     reply = await ollama.completeRaw(model, messages);
     console.log('[client] provider=ollama');
