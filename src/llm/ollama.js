@@ -93,6 +93,35 @@ async function chat({ userId, userMessage, model, persona = 'default', customIns
 }
 
 /**
+ * Raw completion — just the API call, no db interaction.
+ * Used by client.js as the Ollama fallback.
+ * @param {string} model
+ * @param {Array<{role, content}>} messages
+ * @returns {Promise<string>}
+ */
+async function completeRaw(model, messages) {
+  console.log(`[ollama] calling model=${model}, messages=${messages.length}`);
+  let res;
+  try {
+    res = await axios.post(`${BASE_URL}/api/chat`, {
+      model,
+      messages,
+      stream: false,
+    }, { timeout: 180_000 });
+  } catch (err) {
+    console.error('[ollama] axios error:', err.code || err.message);
+    throw err;
+  }
+  if (!res.data?.message?.content) {
+    console.error('[ollama] unexpected response:', JSON.stringify(res.data).slice(0, 200));
+    throw new Error('Empty response from Ollama');
+  }
+  return res.data.message.content
+    .replace(/<think>[\s\S]*?<\/think>\s*/g, '')
+    .trim();
+}
+
+/**
  * List available models from local Ollama.
  */
 async function listModels() {
@@ -117,4 +146,4 @@ async function isOllamaRunning() {
   }
 }
 
-module.exports = { chat, listModels, isOllamaRunning, getSystemPrompt };
+module.exports = { chat, completeRaw, listModels, isOllamaRunning, getSystemPrompt };

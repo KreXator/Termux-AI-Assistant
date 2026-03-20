@@ -1,26 +1,35 @@
 /**
- * vision.js — Image analysis via Ollama vision model
+ * vision.js — Image analysis
  *
- * Sends an image to a locally running Ollama vision model.
- * Default model: llava:7b (override with VISION_MODEL env var)
+ * Primary:  OpenRouter vision model (google/gemma-3-12b-it:free)
+ * Fallback: Local Ollama vision model (llava:7b)
  *
  * Flow:
  *   1. Download photo from Telegram
  *   2. Base64-encode it
- *   3. POST to Ollama /api/chat with images array
+ *   3. Try OpenRouter vision → fall back to Ollama on error
  *   4. Return the model's text response
  */
 'use strict';
 
-const https  = require('https');
-const http   = require('http');
-const fs     = require('fs');
-const path   = require('path');
-const os     = require('os');
-const axios  = require('axios');
+const https      = require('https');
+const http       = require('http');
+const fs         = require('fs');
+const path       = require('path');
+const os         = require('os');
+const axios      = require('axios');
+const openrouter = require('../llm/openrouter');
 
-const VISION_MODEL  = process.env.VISION_MODEL   || 'llava:7b';
-const OLLAMA_BASE   = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+const VISION_MODEL = process.env.VISION_MODEL   || 'llava:7b';
+const OLLAMA_BASE  = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
+
+/**
+ * Returns the model ID that will actually handle vision requests.
+ */
+function getActiveVisionModel() {
+  if (process.env.OPENROUTER_API_KEY) return openrouter.OR_VISION_MODEL;
+  return VISION_MODEL;
+}
 
 /**
  * Download a file from a URL to a temp path.
@@ -67,31 +76,30 @@ async function analyzeImage(bot, fileId, prompt = 'Describe this image in detail
   try {
     // 3. Base64 encode
     const imageData = fs.readFileSync(tmpPath).toString('base64');
+    const ext       = path.extname(fileInfo.file_path).toLowerCase();
+    const mimeType  = ext === '.png' ? 'image/png' : 'image/jpeg';
 
-    // 4. Call Ollama vision model
-    const res = await axios.post(
-      `${OLLAMA_BASE}/api/chat`,
-      {
-        model: VISION_MODEL,
-        stream: false,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-            images: [imageData],
-          },
-        ],
-      },
-      { timeout: 120_000 }
-    );
+    // 4a. Try OpenRouter vision (primary)
+    if (process.env.OPENROUTER_API_KEY) {
+      try {
+        return await openrouter.completeVision(imageData, prompt, mimeType);
+      } catch (err) {
+        console.warn('[vision] OpenRouter failed, falling back to Ollama:', err.message);
+      }
+    }
+
+    // 4b. Ollama fallback
+    const res = await axios.post(`${OLLAMA_BASE}/api/chat`, {
+      model:    VISION_MODEL,
+      stream:   false,
+      messages: [{ role: 'user', content: prompt, images: [imageData] }],
+    }, { timeout: 120_000 });
 
     const reply = res.data.message?.content || '';
-
-    // Strip <think> blocks (some vision models include them)
     return reply.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
   } finally {
     fs.unlink(tmpPath, () => {});
   }
 }
 
-module.exports = { analyzeImage, VISION_MODEL };
+module.exports = { analyzeImage, getActiveVisionModel, VISION_MODEL };

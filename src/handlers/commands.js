@@ -6,7 +6,7 @@
 'use strict';
 
 const db        = require('../db/database');
-const ollama    = require('../llm/ollama');
+const llm       = require('../llm/client');
 const router    = require('../agent/router');
 const search    = require('../tools/search');
 const coder     = require('../tools/coder');
@@ -96,25 +96,32 @@ async function handleHelp(bot, msg) {
 }
 
 async function handleStatus(bot, msg) {
-  const userId = msg.from.id;
-  const alive  = await ollama.isOllamaRunning();
-  const cfg    = db.getConfig(userId);
-  const models = alive ? await ollama.listModels() : [];
-  const schedules = db.getSchedules(userId);
-  const searchMode = process.env.SERPER_API_KEY ? '✅ Serper (Google)' : '⚠️ DuckDuckGo scrape';
+  const userId      = msg.from.id;
+  const cfg         = db.getConfig(userId);
+  const schedules   = db.getSchedules(userId);
+  const searchMode  = process.env.SERPER_API_KEY ? '✅ Serper (Google)' : '⚠️ DuckDuckGo scrape';
+  const orKey       = !!process.env.OPENROUTER_API_KEY;
+  const orAlive     = orKey ? await llm.isOpenRouterReachable() : false;
+  const ollamaAlive = await llm.isOllamaRunning();
+
+  const orLine    = orKey
+    ? `✅ configured (${orAlive ? 'online' : 'unreachable'})`
+    : '➖ not configured';
+  const ollamaLine = ollamaAlive ? '✅ running' : '❌ offline';
+  const activeDisplay = llm.resolveDisplayModel(cfg.model);
 
   await sendLong(bot, msg.chat.id,
     `🖥 *System Status*\n\n` +
-    `Ollama: ${alive ? '✅ running' : '❌ offline'}\n` +
-    `Active model: \`${cfg.model}\` ${cfg.manualModel ? '_(manual)_' : '_(auto-routed)_'}\n` +
+    `OpenRouter: ${orLine}\n` +
+    `Ollama: ${ollamaLine} ${orKey ? '_(fallback)_' : '_(primary)_'}\n\n` +
+    `Active model: \`${activeDisplay}\` ${cfg.manualModel ? '_(manual)_' : '_(auto-routed)_'}\n` +
     `Persona: ${cfg.persona}${cfg.customInstruction ? ' _(overridden by /instruct)_' : ''}\n` +
     `Web search: ${searchMode}\n` +
-    `Schedules: ${schedules.length} active\n` +
-    `Available models: ${models.length ? models.join(', ') : 'none detected'}\n` +
+    `Schedules: ${schedules.length} active\n\n` +
     `Router tiers:\n` +
-    `  💬 small=\`${router.MODEL_SMALL}\`\n` +
-    `  ⚡ medium=\`${router.MODEL_MEDIUM}\`\n` +
-    `  🧠 large=\`${router.MODEL_LARGE}\``
+    `  💬 small=\`${llm.resolveDisplayModel(router.MODEL_SMALL)}\`\n` +
+    `  ⚡ medium=\`${llm.resolveDisplayModel(router.MODEL_MEDIUM)}\`\n` +
+    `  🧠 large=\`${llm.resolveDisplayModel(router.MODEL_LARGE)}\``
   );
 }
 
@@ -146,14 +153,8 @@ async function handleModel(bot, msg, args) {
 }
 
 async function handleModels(bot, msg) {
-  const alive = await ollama.isOllamaRunning();
-  if (!alive) return bot.sendMessage(msg.chat.id, '❌ Ollama is not running.');
-  const models = await ollama.listModels();
-  await sendLong(bot, msg.chat.id,
-    models.length
-      ? `🤖 *Available models:*\n${models.map(m => `• \`${m}\``).join('\n')}`
-      : 'No models found. Run `ollama pull qwen3:8b` in your terminal.'
-  );
+  const info = await llm.listModels();
+  await sendLong(bot, msg.chat.id, `🤖 *Models*\n\n${info}`);
 }
 
 async function handlePersona(bot, msg, args) {
@@ -511,7 +512,7 @@ async function handlePhoto(bot, msg) {
   const caption  = msg.caption?.trim() || 'Describe this image in detail.';
 
   await bot.sendChatAction(chatId, 'upload_photo');
-  const waitMsg = await bot.sendMessage(chatId, `🔍 Analyzing image with \`${vision.VISION_MODEL}\`...`, { parse_mode: 'Markdown' });
+  const waitMsg = await bot.sendMessage(chatId, `🔍 Analyzing image with \`${vision.getActiveVisionModel()}\`...`, { parse_mode: 'Markdown' });
 
   try {
     const description = await vision.analyzeImage(bot, fileId, caption);
@@ -521,7 +522,7 @@ async function handlePhoto(bot, msg) {
     await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
     let errMsg = `❌ Vision error: ${err.message}`;
     if (err.code === 'ECONNREFUSED')
-      errMsg = `❌ Ollama not running. Start it with \`ollama serve\`, then pull \`${vision.VISION_MODEL}\`.`;
+      errMsg = `❌ Vision unavailable: OpenRouter unreachable and Ollama not running.\nStart Ollama: \`ollama serve\``;
     await bot.sendMessage(chatId, errMsg, { parse_mode: 'Markdown' });
   }
 }
@@ -553,19 +554,20 @@ async function handleMessage(bot, msg) {
     enriched = `User asked: ${text}\n\nContext from web search:\n${results}`;
   }
 
-  const model = manualModel || router.routeModel(text, null);
-  const label = router.modelLabel(model);
+  const model        = manualModel || router.routeModel(text, null);
+  const label        = router.modelLabel(model);
+  const displayModel = llm.resolveDisplayModel(model);
 
   let typingInterval;
   let loadingMsg = null;
   try {
     if (model !== router.MODEL_SMALL) {
-      loadingMsg = await bot.sendMessage(chatId, `⏳ *${label} — ${model}...*`);
+      loadingMsg = await bot.sendMessage(chatId, `⏳ *${label} — ${displayModel}...*`);
     }
 
     typingInterval = setInterval(() => bot.sendChatAction(chatId, 'typing'), 5000);
 
-    const reply = await ollama.chat({
+    const reply = await llm.chat({
       userId,
       userMessage:       enriched,
       model,
@@ -585,9 +587,11 @@ async function handleMessage(bot, msg) {
 
     let errMsg = `❌ Error: ${err.message}`;
     if (err.code === 'ECONNREFUSED')
-      errMsg = '❌ Cannot reach Ollama. Make sure it is running: `ollama serve`';
+      errMsg = '❌ All providers unreachable.\n' +
+               'OpenRouter: check your API key.\n' +
+               'Ollama: run `ollama serve` to start it.';
     if (err.code === 'ECONNABORTED' || err.message?.includes('timeout'))
-      errMsg = `⏱️ *Timeout!* Model \`${model}\` did not respond within 180s.\nTry a lighter model with \`/model auto\`.`;
+      errMsg = `⏱️ *Timeout!* Model \`${displayModel}\` did not respond within 180s.\nTry a lighter model with \`/model auto\`.`;
 
     await bot.sendMessage(chatId, errMsg, { parse_mode: 'Markdown' });
   }
