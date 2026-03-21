@@ -14,6 +14,7 @@ const coder     = require('../tools/coder');
 const scheduler        = require('../scheduler/scheduler');
 const reminder         = require('../tools/reminder');
 const briefingCmd      = require('./briefingCmd');
+const intentHandler    = require('./intentHandler');
 const weather   = require('../tools/weather');
 const voice     = require('../tools/voice');
 const vision    = require('../tools/vision');
@@ -551,6 +552,180 @@ async function handlePhoto(bot, msg) {
   }
 }
 
+// ─── Natural Language Intent Executor ────────────────────────────────────────
+
+/** Pick the right language string: t('en', 'English text', 'Polski tekst') */
+function t(lang, en, pl) { return lang === 'en' ? en : pl; }
+
+/**
+ * Execute a parsed intent. Returns true if handled, false if intent unknown.
+ */
+async function executeIntent(bot, msg, intent) {
+  const { intent: type, params, lang = 'pl' } = intent;
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  // Store chatId for briefing scheduler
+  db.setBriefingConfig(userId, { chatId });
+
+  switch (type) {
+    case 'briefing_add_feed': {
+      const { url, label, category = 'general' } = params;
+      if (!url || !label) {
+        await bot.sendMessage(chatId,
+          t(lang, '⚠️ Could not detect URL or feed name. Try: `/briefing add <url> <label>`',
+                  '⚠️ Nie mogłem rozpoznać URL ani nazwy feeda. Spróbuj: `/briefing add <url> <label>`'),
+          { parse_mode: 'Markdown' });
+        return true;
+      }
+      db.addBriefingFeed(userId, url, label, category);
+      await bot.sendMessage(chatId,
+        `✅ ${t(lang, 'Feed added', 'Feed dodany')}: \`${label}\` (${category})\n${url}`,
+        { parse_mode: 'Markdown' });
+      return true;
+    }
+
+    case 'briefing_on': {
+      const feeds = db.getBriefingFeeds(userId);
+      if (!feeds.length) {
+        await bot.sendMessage(chatId,
+          t(lang, '⚠️ Add an RSS feed first. E.g: "add feed https://... as myfeed category jobs"',
+                  '⚠️ Najpierw dodaj feed RSS. Np: "dodaj feed https://... jako myfeed z kategorią jobs"'));
+        return true;
+      }
+      db.setBriefingConfig(userId, { morningEnabled: true, eveningEnabled: true, chatId });
+      const bSched = require('../scheduler/briefingScheduler');
+      bSched.reload(userId, chatId);
+      const cfg = db.getBriefingConfig(userId);
+      await bot.sendMessage(chatId,
+        `✅ ${t(lang, 'Reports enabled', 'Raporty włączone')}.\n${t(lang, 'Morning', 'Poranny')}: *${cfg.morningTime}* | ${t(lang, 'Evening', 'Wieczorny')}: *${cfg.eveningTime}*`,
+        { parse_mode: 'Markdown' });
+      return true;
+    }
+
+    case 'briefing_off': {
+      db.setBriefingConfig(userId, { morningEnabled: false, eveningEnabled: false });
+      const bSched = require('../scheduler/briefingScheduler');
+      bSched.reload(userId, chatId);
+      await bot.sendMessage(chatId, `⏹ ${t(lang, 'Reports disabled.', 'Raporty wyłączone.')}`);
+      return true;
+    }
+
+    case 'briefing_time_morning':
+    case 'briefing_time_evening': {
+      const { time, enable } = params;
+      if (!time || !/^\d{1,2}:\d{2}$/.test(time)) {
+        await bot.sendMessage(chatId,
+          t(lang, '⚠️ Could not parse the time. Use HH:MM format, e.g. 07:30.',
+                  '⚠️ Nie rozpoznałem godziny. Podaj w formacie HH:MM, np. 07:30.'));
+        return true;
+      }
+      const isMorning = type === 'briefing_time_morning';
+      const timeKey   = isMorning ? 'morningTime'    : 'eveningTime';
+      const enableKey = isMorning ? 'morningEnabled' : 'eveningEnabled';
+      const labelStr  = isMorning ? t(lang, 'morning', 'porannego') : t(lang, 'evening', 'wieczornego');
+      const updates   = { [timeKey]: time };
+      if (enable) updates[enableKey] = true;
+      db.setBriefingConfig(userId, updates);
+      const bSched = require('../scheduler/briefingScheduler');
+      bSched.reload(userId, chatId);
+      const onOff = enable ? t(lang, ' and enabled', ' i włączony') : '';
+      await bot.sendMessage(chatId,
+        `✅ ${t(lang, 'Time for', 'Godzina')} ${labelStr} ${t(lang, 'report', 'raportu')}: *${time}*${onOff}`,
+        { parse_mode: 'Markdown' });
+      return true;
+    }
+
+    case 'briefing_keywords_add': {
+      const { keyword } = params;
+      if (!keyword) {
+        await bot.sendMessage(chatId, t(lang, '⚠️ Could not detect keyword.', '⚠️ Nie rozpoznałem słowa kluczowego.'));
+        return true;
+      }
+      const added = db.addBriefingKeyword(userId, keyword);
+      await bot.sendMessage(chatId,
+        added
+          ? `✅ ${t(lang, 'Filter', 'Filtr')} \`${keyword.toLowerCase()}\` ${t(lang, 'added to job offers.', 'dodany do ofert pracy.')}`
+          : `ℹ️ ${t(lang, 'Filter', 'Filtr')} \`${keyword.toLowerCase()}\` ${t(lang, 'already exists.', 'już istnieje.')}`,
+        { parse_mode: 'Markdown' });
+      return true;
+    }
+
+    case 'briefing_keywords_remove': {
+      const { keyword } = params;
+      if (!keyword) {
+        await bot.sendMessage(chatId, t(lang, '⚠️ Could not detect keyword.', '⚠️ Nie rozpoznałem słowa kluczowego.'));
+        return true;
+      }
+      const ok = db.removeBriefingKeyword(userId, keyword);
+      await bot.sendMessage(chatId,
+        ok
+          ? `✅ ${t(lang, 'Filter', 'Filtr')} \`${keyword.toLowerCase()}\` ${t(lang, 'removed.', 'usunięty.')}`
+          : `❌ ${t(lang, 'Filter', 'Filtr')} \`${keyword.toLowerCase()}\` ${t(lang, 'not found.', 'nie znaleziony.')}`,
+        { parse_mode: 'Markdown' });
+      return true;
+    }
+
+    case 'schedule_add': {
+      const { time, query } = params;
+      if (!time || !query || !/^\d{1,2}:\d{2}$/.test(time)) {
+        await bot.sendMessage(chatId,
+          t(lang, '⚠️ Could not parse time or query. Try: `/schedule add HH:MM [query]`',
+                  '⚠️ Nie rozpoznałem godziny lub zapytania. Spróbuj: `/schedule add HH:MM [zapytanie]`'),
+          { parse_mode: 'Markdown' });
+        return true;
+      }
+      const schedule = db.addSchedule(userId, chatId, query, time);
+      scheduler.add(schedule);
+      const tz = process.env.TZ || 'Europe/Warsaw';
+      await bot.sendMessage(chatId,
+        `✅ ${t(lang, 'Scheduled!', 'Zaplanowano!')}\n🕐 *${time}* ${t(lang, 'daily', 'codziennie')} (${tz})\n🔍 _${query}_`,
+        { parse_mode: 'Markdown' });
+      return true;
+    }
+
+    case 'remind': {
+      const { when, text: reminderText } = params;
+      if (!when) {
+        await bot.sendMessage(chatId,
+          t(lang, '⚠️ Could not parse the time. Try: "remind me in 30min about meeting"',
+                  '⚠️ Nie rozpoznałem czasu. Spróbuj: "przypomnij mi za 30min o spotkaniu"'));
+        return true;
+      }
+      const delayMs = reminder.parseTime(when);
+      if (delayMs === null) {
+        await bot.sendMessage(chatId,
+          `⚠️ ${t(lang, 'Could not parse time', 'Nie rozpoznałem czasu')}: \`${when}\`. ${t(lang, 'Use: 30min, 2h, 17:30', 'Użyj: 30min, 2h, 17:30')}`,
+          { parse_mode: 'Markdown' });
+        return true;
+      }
+      const rText = reminderText || t(lang, 'Reminder!', 'Przypomnienie!');
+      const info  = reminder.add(bot, chatId, userId, rText, delayMs);
+      await bot.sendMessage(chatId,
+        `⏰ ${t(lang, 'Reminder set!', 'Przypomnienie ustawione!')}\n📝 _${rText}_\n🕐 ${t(lang, 'In', 'Za')} *${info.inMs}*`,
+        { parse_mode: 'Markdown' });
+      return true;
+    }
+
+    case 'remember': {
+      const { fact } = params;
+      if (!fact) {
+        await bot.sendMessage(chatId,
+          t(lang, '⚠️ Could not detect the fact to remember.', '⚠️ Nie rozpoznałem faktu do zapamiętania.'));
+        return true;
+      }
+      db.addMemory(userId, fact);
+      await bot.sendMessage(chatId,
+        `🧠 ${t(lang, 'Got it:', 'Zapamiętałem:')} _${fact}_`,
+        { parse_mode: 'Markdown' });
+      return true;
+    }
+
+    default:
+      return false;
+  }
+}
+
 // ─── Plain Message → Agent ───────────────────────────────────────────────────
 
 async function handleMessage(bot, msg) {
@@ -562,6 +737,13 @@ async function handleMessage(bot, msg) {
   // Store chatId so scheduler can push messages even without a prior message
   const cfg = db.getConfig(userId);
   if (cfg.chatId !== chatId) db.setConfig(userId, { chatId });
+
+  // Natural language intent detection — runs only when trigger words present
+  const intent = await intentHandler.detectIntent(text);
+  if (intent) {
+    const handled = await executeIntent(bot, msg, intent);
+    if (handled) return;
+  }
 
   await bot.sendChatAction(chatId, 'typing');
 

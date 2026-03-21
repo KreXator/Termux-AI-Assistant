@@ -46,6 +46,22 @@ function filterNew(userId, items) {
 }
 
 /**
+ * Apply keyword filter to job-category items.
+ * Items from non-jobs categories pass through unchanged.
+ * Jobs items are kept only if at least one keyword matches title or summary.
+ * If user has no keywords, all job items pass through.
+ */
+function applyKeywordFilter(userId, items) {
+  const keywords = db.getBriefingKeywords(userId);
+  if (!keywords.length) return items;
+  return items.filter(item => {
+    if (item.category !== 'jobs') return true;
+    const text = `${item.title} ${item.summary}`.toLowerCase();
+    return keywords.some(kw => text.includes(kw));
+  });
+}
+
+/**
  * Format items by category into a readable block.
  */
 function formatItems(items, maxPerCategory = 8) {
@@ -80,10 +96,11 @@ async function buildMorning(userId) {
   if (!feeds.length) return null;
 
   console.log(`[briefing] Morning for user ${userId} — fetching ${feeds.length} feed(s)…`);
-  const allItems = await rss.fetchFeeds(feeds);
-  const newItems = filterNew(userId, allItems);
+  const allItems     = await rss.fetchFeeds(feeds);
+  const newItems     = filterNew(userId, allItems);
+  const filteredItems = applyKeywordFilter(userId, newItems);
 
-  if (!newItems.length) {
+  if (!filteredItems.length) {
     return `🌅 *PORANNY RAPORT — ${today()}*\n\n_Brak nowych pozycji w feedach._`;
   }
 
@@ -93,7 +110,7 @@ async function buildMorning(userId) {
     ? `Fakty o użytkowniku:\n${memFacts.map(f => `- ${f.fact}`).join('\n')}\n\n`
     : '';
 
-  const itemsText = newItems.map(i =>
+  const itemsText = filteredItems.map(i =>
     `[${i.label}] ${i.title}${i.summary ? ': ' + i.summary : ''}`
   ).join('\n');
 
@@ -103,11 +120,11 @@ async function buildMorning(userId) {
     `Wyróżnij pozycje najbardziej istotne dla użytkownika. Nie wymieniaj wszystkiego — skup się na tym co ważne.`
   );
 
-  const itemsList = formatItems(newItems);
+  const itemsList = formatItems(filteredItems);
 
   return [
     `🌅 *PORANNY RAPORT — ${today()}*`,
-    `_(${newItems.length} nowych pozycji z ${feeds.length} feedów)_`,
+    `_(${filteredItems.length} nowych pozycji z ${feeds.length} feedów)_`,
     '',
     `📊 *PODSUMOWANIE*`,
     summary,
@@ -128,10 +145,11 @@ async function buildEvening(userId) {
   if (!feeds.length) return null;
 
   console.log(`[briefing] Evening for user ${userId} — fetching ${feeds.length} feed(s)…`);
-  const allItems = await rss.fetchFeeds(feeds);
-  const newItems = filterNew(userId, allItems);
+  const allItems      = await rss.fetchFeeds(feeds);
+  const newItems      = filterNew(userId, allItems);
+  const filteredItems = applyKeywordFilter(userId, newItems);
 
-  if (!newItems.length) {
+  if (!filteredItems.length) {
     return `🌙 *WIECZORNY RAPORT — ${today()}*\n\n_Brak nowych pozycji od porannego raportu._`;
   }
 
@@ -140,7 +158,7 @@ async function buildEvening(userId) {
     ? `Fakty o użytkowniku:\n${memFacts.map(f => `- ${f.fact}`).join('\n')}\n\n`
     : '';
 
-  const itemsText = newItems.map(i =>
+  const itemsText = filteredItems.map(i =>
     `[${i.label}] ${i.title}${i.summary ? ': ' + i.summary : ''}`
   ).join('\n');
 
@@ -150,11 +168,11 @@ async function buildEvening(userId) {
     `Co było najważniejsze? Jakie są kluczowe wnioski na jutro?`
   );
 
-  const itemsList = formatItems(newItems);
+  const itemsList = formatItems(filteredItems);
 
   return [
     `🌙 *WIECZORNY RAPORT — ${today()}*`,
-    `_(${newItems.length} nowych pozycji)_`,
+    `_(${filteredItems.length} nowych pozycji)_`,
     '',
     `📊 *PODSUMOWANIE DNIA*`,
     summary,

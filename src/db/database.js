@@ -24,9 +24,10 @@ const TODO_FILE          = path.join(DATA_DIR, 'todos.json');
 const CONFIG_FILE        = path.join(DATA_DIR, 'config.json');
 const SCHEDULE_FILE      = path.join(DATA_DIR, 'schedules.json');
 const REMINDER_FILE      = path.join(DATA_DIR, 'reminders.json');
-const BRIEFING_FEEDS_FILE  = path.join(DATA_DIR, 'briefing_feeds.json');
-const BRIEFING_SEEN_FILE   = path.join(DATA_DIR, 'briefing_seen.json');
-const BRIEFING_CFG_FILE    = path.join(DATA_DIR, 'briefing_config.json');
+const BRIEFING_FEEDS_FILE    = path.join(DATA_DIR, 'briefing_feeds.json');
+const BRIEFING_SEEN_FILE     = path.join(DATA_DIR, 'briefing_seen.json');
+const BRIEFING_CFG_FILE      = path.join(DATA_DIR, 'briefing_config.json');
+const BRIEFING_KEYWORDS_FILE = path.join(DATA_DIR, 'briefing_keywords.json');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -328,6 +329,37 @@ function getAllBriefingConfigs() {
   return Object.entries(all).map(([userId, cfg]) => ({ userId: Number(userId), ...cfg }));
 }
 
+// ─── Briefing Keywords (job offer filters) ───────────────────────────────────
+
+function getBriefingKeywords(userId) {
+  const all = loadJSON(BRIEFING_KEYWORDS_FILE, {});
+  return all[String(userId)] || [];
+}
+
+function addBriefingKeyword(userId, keyword) {
+  const all = loadJSON(BRIEFING_KEYWORDS_FILE, {});
+  const uid = String(userId);
+  if (!all[uid]) all[uid] = [];
+  const kw = keyword.trim().toLowerCase();
+  if (!all[uid].includes(kw)) {
+    all[uid].push(kw);
+    saveJSON(BRIEFING_KEYWORDS_FILE, all);
+    return true;
+  }
+  return false; // already exists
+}
+
+function removeBriefingKeyword(userId, keyword) {
+  const all = loadJSON(BRIEFING_KEYWORDS_FILE, {});
+  const uid = String(userId);
+  if (!all[uid]) return false;
+  const kw = keyword.trim().toLowerCase();
+  const before = all[uid].length;
+  all[uid] = all[uid].filter(k => k !== kw);
+  saveJSON(BRIEFING_KEYWORDS_FILE, all);
+  return all[uid].length < before;
+}
+
 module.exports = {
   // history
   getHistory, saveHistory, appendMessage, clearHistory,
@@ -347,4 +379,5 @@ module.exports = {
   getBriefingFeeds, addBriefingFeed, removeBriefingFeed,
   getBriefingSeenIds, markBriefingSeen,
   getBriefingConfig, setBriefingConfig, getAllBriefingConfigs,
+  getBriefingKeywords, addBriefingKeyword, removeBriefingKeyword,
 };

@@ -5,7 +5,10 @@
     "main": "index.js",
     "scripts": {
         "start": "node index.js",
-        "dev": "node --watch index.js"
+        "dev": "node --watch index.js",
+        "autostart:install": "node scripts/autostart.js install",
+        "autostart:remove": "node scripts/autostart.js remove",
+        "autostart:status": "node scripts/autostart.js status"
     },
     "keywords": [],
     "author": "",

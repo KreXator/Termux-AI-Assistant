@@ -29,6 +29,9 @@ const HELP = `
 \`/briefing add <url> <label> jobs\` — dodaj z kategorią
 \`/briefing remove <label>\` — usuń feed
 \`/briefing list\` — lista feedów
+\`/briefing keywords add <słowo>\` — dodaj filtr ofert pracy
+\`/briefing keywords remove <słowo>\` — usuń filtr
+\`/briefing keywords list\` — lista filtrów
 \`/briefing now morning\` — wyślij teraz poranny raport
 \`/briefing now evening\` — wyślij teraz wieczorny raport
 
@@ -47,8 +50,9 @@ async function handle(bot, msg, args) {
 
   // ── /briefing (no args) ───────────────────────────────────────────────────
   if (!sub) {
-    const cfg   = db.getBriefingConfig(userId);
-    const feeds = db.getBriefingFeeds(userId);
+    const cfg      = db.getBriefingConfig(userId);
+    const feeds    = db.getBriefingFeeds(userId);
+    const keywords = db.getBriefingKeywords(userId);
     const lines = [
       `*📰 Daily Briefing — status*`,
       ``,
@@ -56,6 +60,7 @@ async function handle(bot, msg, args) {
       `Wieczorny raport: ${cfg.eveningEnabled ? `✅ ${cfg.eveningTime}` : '❌ wyłączony'}`,
       ``,
       `Feedy RSS: ${feeds.length ? feeds.map(f => `\`${f.label}\``).join(', ') : '_brak_'}`,
+      `Filtry ofert (jobs): ${keywords.length ? keywords.map(k => `\`${k}\``).join(', ') : '_brak (wszystkie oferty)_'}`,
       ``,
       `Użyj \`/briefing help\` po więcej opcji.`,
     ];
@@ -150,6 +155,54 @@ async function handle(bot, msg, args) {
       lines.push(`• \`${f.label}\` [${f.category}]\n  ${f.url}`);
     }
     return bot.sendMessage(chatId, lines.join('\n'), { parse_mode: 'Markdown' });
+  }
+
+  // ── /briefing keywords add|remove|list ───────────────────────────────────
+  if (sub === 'keywords') {
+    const action  = args[1]?.toLowerCase();
+    const keyword = args.slice(2).join(' ').trim();
+
+    if (action === 'list') {
+      const kws = db.getBriefingKeywords(userId);
+      if (!kws.length) {
+        return bot.sendMessage(chatId,
+          '_Brak filtrów. Dodaj: `/briefing keywords add <słowo>`_\n' +
+          '_Bez filtrów — wszystkie oferty z kategorii jobs są pokazywane._',
+          { parse_mode: 'Markdown' }
+        );
+      }
+      return bot.sendMessage(chatId,
+        `*🔍 Filtry ofert pracy (${kws.length}):*\n${kws.map(k => `• \`${k}\``).join('\n')}`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    if (action === 'add') {
+      if (!keyword) {
+        return bot.sendMessage(chatId, 'Użycie: `/briefing keywords add <słowo>`', { parse_mode: 'Markdown' });
+      }
+      const added = db.addBriefingKeyword(userId, keyword);
+      return bot.sendMessage(chatId,
+        added ? `✅ Filtr \`${keyword.toLowerCase()}\` dodany.` : `ℹ️ Filtr \`${keyword.toLowerCase()}\` już istnieje.`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    if (action === 'remove') {
+      if (!keyword) {
+        return bot.sendMessage(chatId, 'Użycie: `/briefing keywords remove <słowo>`', { parse_mode: 'Markdown' });
+      }
+      const ok = db.removeBriefingKeyword(userId, keyword);
+      return bot.sendMessage(chatId,
+        ok ? `✅ Filtr \`${keyword.toLowerCase()}\` usunięty.` : `❌ Nie znaleziono filtru \`${keyword.toLowerCase()}\`.`,
+        { parse_mode: 'Markdown' }
+      );
+    }
+
+    return bot.sendMessage(chatId,
+      'Użycie: `/briefing keywords add|remove|list [słowo]`',
+      { parse_mode: 'Markdown' }
+    );
   }
 
   // ── /briefing now morning|evening ─────────────────────────────────────────
