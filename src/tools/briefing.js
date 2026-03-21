@@ -14,6 +14,11 @@ const ollama     = require('../llm/ollama');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+/** Escape Telegram Markdown V1 special characters in plain text. */
+function esc(text) {
+  return String(text).replace(/[*_`[\]]/g, '\\$&');
+}
+
 function today() {
   return new Date().toLocaleDateString('pl-PL', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -76,7 +81,7 @@ function formatItems(items, maxPerCategory = 8) {
   for (const [cat, catItems] of Object.entries(byCategory)) {
     lines.push(`*${cat.toUpperCase()}*`);
     for (const item of catItems) {
-      const title = item.title.slice(0, 100);
+      const title = esc(item.title.slice(0, 100));
       const link  = item.link ? ` — [link](${item.link})` : '';
       lines.push(`• ${title}${link}`);
     }
