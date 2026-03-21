@@ -35,6 +35,17 @@ const TRIGGER_RE = new RegExp([
   'remember\\s+that',
   'note\\s+that',
 
+  // Briefing run now
+  'odpal\\s+briefing',
+  'uruchom\\s+briefing',
+  'wyślij\\s+briefing',
+  'pokaż\\s+briefing',
+  'daj\\s+briefing',
+  'run\\s+briefing',
+  'send\\s+briefing',
+  'briefing\\s+now',
+  'briefing\\s+teraz',
+
   // Briefing feeds — add/remove/list
   'dodaj\\s+feed',
   'dodaj\\s+rss',
@@ -107,6 +118,7 @@ Supported intents:
 - briefing_keywords_add  → add keyword filter for job offers
 - briefing_keywords_remove → remove keyword filter
 - briefing_list_feeds    → list all configured RSS feeds
+- briefing_run_now      → trigger morning or evening briefing immediately
 - schedule_add           → add a daily recurring web search at a specific time
 - remind                 → set a one-time reminder
 - remember               → save a persistent fact about the user
@@ -125,6 +137,7 @@ Params per intent:
 - briefing_keywords_add:  {"keyword": "exact phrase in lowercase"}
 - briefing_keywords_remove: {"keyword": "exact phrase in lowercase"}
 - briefing_list_feeds:    {}
+- briefing_run_now:      {"type": "morning|evening"}  — "morning" if user says morning/poranny/rano, "evening" if evening/wieczorny/wieczorem, default "morning"
 - schedule_add:           {"time": "HH:MM", "query": "search query string"}
 - remind:                 {"when": "30min|2h|45s|HH:MM", "text": "reminder message"}
 - remember:               {"fact": "fact about the user in third person, Polish"}
@@ -198,6 +211,21 @@ Examples:
 
 "usuń filtr remote"
 → {"intent":"briefing_keywords_remove","lang":"pl","params":{"keyword":"remote"}}
+
+"odpal briefing"
+→ {"intent":"briefing_run_now","lang":"pl","params":{"type":"morning"}}
+
+"odpal briefing now in the morning"
+→ {"intent":"briefing_run_now","lang":"en","params":{"type":"morning"}}
+
+"odpal briefing wieczorny"
+→ {"intent":"briefing_run_now","lang":"pl","params":{"type":"evening"}}
+
+"run briefing now"
+→ {"intent":"briefing_run_now","lang":"en","params":{"type":"morning"}}
+
+"wyślij mi wieczorny briefing"
+→ {"intent":"briefing_run_now","lang":"pl","params":{"type":"evening"}}
 
 "podaj moje feedy rss"
 → {"intent":"briefing_list_feeds","lang":"pl","params":{}}
@@ -290,7 +318,7 @@ function parseResponse(raw) {
       'briefing_add_feed', 'briefing_on', 'briefing_off',
       'briefing_time_morning', 'briefing_time_evening',
       'briefing_keywords_add', 'briefing_keywords_remove',
-      'briefing_list_feeds',
+      'briefing_list_feeds', 'briefing_run_now',
       'schedule_add', 'remind', 'remember',
     ]);
     if (!KNOWN.has(obj.intent)) return null;

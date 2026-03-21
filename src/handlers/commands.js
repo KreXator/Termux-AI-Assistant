@@ -14,6 +14,7 @@ const coder     = require('../tools/coder');
 const scheduler        = require('../scheduler/scheduler');
 const reminder         = require('../tools/reminder');
 const briefingCmd      = require('./briefingCmd');
+const bScheduler       = require('../scheduler/briefingScheduler');
 const intentHandler    = require('./intentHandler');
 const weather   = require('../tools/weather');
 const voice     = require('../tools/voice');
@@ -663,6 +664,22 @@ async function executeIntent(bot, msg, intent) {
           ? `✅ ${t(lang, 'Filter', 'Filtr')} \`${keyword.toLowerCase()}\` ${t(lang, 'removed.', 'usunięty.')}`
           : `❌ ${t(lang, 'Filter', 'Filtr')} \`${keyword.toLowerCase()}\` ${t(lang, 'not found.', 'nie znaleziony.')}`,
         { parse_mode: 'Markdown' });
+      return true;
+    }
+
+    case 'briefing_run_now': {
+      const type = params.type === 'evening' ? 'evening' : 'morning';
+      const feeds = db.getBriefingFeeds(userId);
+      if (!feeds.length) {
+        await bot.sendMessage(chatId,
+          t(lang, '⚠️ No feeds configured. Add one: `/briefing add <url> <label>`',
+                  '⚠️ Brak feedów. Dodaj: `/briefing add <url> <label>`'),
+          { parse_mode: 'Markdown' });
+        return true;
+      }
+      await bot.sendMessage(chatId,
+        t(lang, `⏳ Generating ${type} briefing…`, `⏳ Generuję ${type === 'morning' ? 'poranny' : 'wieczorny'} raport…`));
+      await bScheduler.runNow(userId, chatId, type);
       return true;
     }
 
