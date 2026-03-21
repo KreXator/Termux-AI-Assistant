@@ -44,7 +44,9 @@ async function main() {
     console.log('✅ Ollama is running' + (orKey ? ' (fallback).' : '.'));
   }
 
-  const bot = new TelegramBot(TOKEN, { polling: true });
+  const bot = new TelegramBot(TOKEN, {
+    polling: { params: { allowed_updates: ['message', 'callback_query'] } },
+  });
 
   commands.register(bot);
 

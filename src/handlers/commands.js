@@ -1024,43 +1024,53 @@ function register(bot) {
   bot.on('callback_query', async (query) => {
     const data = query.data || '';
     const colonIdx = data.indexOf(':');
-    if (colonIdx === -1) return bot.answerCallbackQuery(query.id);
+    if (colonIdx === -1) {
+      bot.answerCallbackQuery(query.id).catch(() => {});
+      return;
+    }
 
     const action       = data.slice(0, colonIdx);
     const targetUserId = data.slice(colonIdx + 1);
     const userId       = String(query.from.id);
 
-    // Only the original user may confirm/cancel their own pending action
     if (userId !== targetUserId) {
-      return bot.answerCallbackQuery(query.id, { text: 'To nie twoja akcja.' });
+      bot.answerCallbackQuery(query.id, { text: 'To nie twoja akcja.' }).catch(() => {});
+      return;
     }
 
     const pending = pendingIntents.get(userId);
     if (!pending) {
-      await bot.answerCallbackQuery(query.id, { text: 'Akcja wygasła lub już wykonana.' });
+      bot.answerCallbackQuery(query.id, { text: 'Akcja wygasła lub już wykonana.' }).catch(() => {});
       return;
     }
 
-    // Clear pending state
     clearTimeout(pending.timer);
     pendingIntents.delete(userId);
 
-    // Remove buttons from the confirmation message
-    await bot.editMessageReplyMarkup(
+    // Answer immediately — removes the loading spinner on the button
+    bot.answerCallbackQuery(query.id, {
+      text: action === 'confirm' ? '✅ Wykonuję…' : '❌ Anulowano.',
+    }).catch(() => {});
+
+    // Remove buttons (fire-and-forget, don't block)
+    bot.editMessageReplyMarkup(
       { inline_keyboard: [] },
       { chat_id: pending.chatId, message_id: pending.msgId }
     ).catch(() => {});
 
-    if (action === 'confirm') {
-      await bot.answerCallbackQuery(query.id, { text: '✅ Wykonuję…' });
-      const fakeMsg = { chat: { id: pending.chatId }, from: { id: Number(userId) } };
-      await executeIntent(bot, fakeMsg, pending.intent);
-    } else {
-      await bot.answerCallbackQuery(query.id, { text: '❌ Anulowano.' });
-      await bot.sendMessage(pending.chatId,
-        '_Anulowano. Potraktuję to jako zwykłe pytanie._',
-        { parse_mode: 'Markdown' }
-      );
+    try {
+      if (action === 'confirm') {
+        const fakeMsg = { chat: { id: pending.chatId }, from: { id: Number(userId) } };
+        await executeIntent(bot, fakeMsg, pending.intent);
+      } else {
+        await bot.sendMessage(pending.chatId,
+          '_Anulowano. Potraktuję to jako zwykłe pytanie._',
+          { parse_mode: 'Markdown' }
+        );
+      }
+    } catch (err) {
+      console.error('[callback_query] executeIntent error:', err.message);
+      bot.sendMessage(pending.chatId, '⚠️ Błąd podczas wykonywania komendy.').catch(() => {});
     }
   });
 }
