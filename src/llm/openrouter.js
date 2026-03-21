@@ -32,6 +32,10 @@ const OR_VISION_MODEL  = process.env.OR_VISION_MODEL  || 'google/gemma-3-12b-it:
 // ~$0.005 per conversation, no upstream rate limits.
 const OR_MODEL_PREMIUM = process.env.OR_MODEL_PREMIUM || 'google/gemini-2.5-flash-lite';
 
+// Coding-specialized free model — manually selectable via /model code.
+// Nemotron 3 Super: 120B MoE (12B active), 262K ctx, NVIDIA-hosted (no Venice rate limits).
+const OR_MODEL_CODER   = process.env.OR_MODEL_CODER   || 'nvidia/nemotron-3-super-120b-a12b:free';
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function orHeaders() {
@@ -172,4 +176,5 @@ module.exports = {
   OR_MODEL_LARGE,
   OR_VISION_MODEL,
   OR_MODEL_PREMIUM,
+  OR_MODEL_CODER,
 };

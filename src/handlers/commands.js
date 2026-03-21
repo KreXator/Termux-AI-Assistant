@@ -145,6 +145,7 @@ async function handleClear(bot, msg) {
 // Named model aliases — resolved to actual model IDs before storing
 const MODEL_ALIASES = {
   premium: openrouter.OR_MODEL_PREMIUM,
+  code:    openrouter.OR_MODEL_CODER,
   large:   openrouter.OR_MODEL_LARGE,
   medium:  openrouter.OR_MODEL_MEDIUM,
   small:   openrouter.OR_MODEL_SMALL,
@@ -155,9 +156,11 @@ async function handleModel(bot, msg, args) {
   if (!args.length) {
     const cfg = db.getConfig(userId);
     return bot.sendMessage(msg.chat.id,
-      `Current model: \`${cfg.model}\` ${cfg.manualModel ? '_(manual override)_' : '_(auto-routed)_'}\n` +
-      `Use \`/model auto\` to re-enable auto-routing.\n` +
-      `Use \`/model premium\` to switch to the paid model.`
+      `Current model: \`${cfg.model}\` ${cfg.manualModel ? '_(manual override)_' : '_(auto-routed)_'}\n\n` +
+      `Available shortcuts:\n` +
+      `  \`/model auto\`    — auto-routing (default)\n` +
+      `  \`/model code\`    — Devstral 2 (coding sessions)\n` +
+      `  \`/model premium\` — Gemini Flash Lite (paid, no limits)`
     );
   }
   const input     = args.join(' ').toLowerCase();
