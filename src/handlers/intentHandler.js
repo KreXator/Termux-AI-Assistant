@@ -18,7 +18,7 @@ const ollama     = require('../llm/ollama');
 // Broad gate: catches imperative verbs, URLs, and time patterns.
 // Deliberately over-inclusive — the LLM classifier handles disambiguation.
 // False positives are harmless because a confirmation step precedes execution.
-const TRIGGER_RE = /\b(dodaj|usuń|włącz|wyłącz|zaplanuj|ustaw|zmień|przypomnij|zapamiętaj|zanotuj|zapisz|pamiętaj|schedule|add|remove|delete|enable|disable|remind|remember|note|set|filter|subscribe|subskrybuj|list|show|pokaż|uruchom|odpal|wyślij|run|send|filtruj|aktywuj|dezaktywuj)\b|https?:\/\/|\b\d{1,2}:\d{2}\b|za\s+\d+\s*(min|godzin|sek|h)/i;
+const TRIGGER_RE = /\b(dodaj|usuń|włącz|wyłącz|zaplanuj|ustaw|zmień|przypomnij|zapamiętaj|zanotuj|zapisz|pamiętaj|schedule|add|remove|delete|enable|disable|remind|remember|note|set|filter|subscribe|subskrybuj|list|show|pokaż|uruchom|odpal|wyślij|run|send|filtruj|aktywuj|dezaktywuj|jakie|moje|harmonogram|feedy|wyszukiwania|filtry|przypomnienia)\b|https?:\/\/|\b\d{1,2}:\d{2}\b|za\s+\d+\s*(min|godzin|sek|h)/i;
 
 // ─── Intent classification prompt ─────────────────────────────────────────────
 
