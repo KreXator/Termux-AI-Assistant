@@ -100,6 +100,14 @@ const TRIGGER_RE = new RegExp([
   'codziennie\\s+o\\s+\\d',
   'every\\s+day\\s+at',
   'dodaj\\s+harmonogram',
+  'dodaj\\s+schedule',
+  'dodaj\\s+zaplanowane',
+  'dodaj\\s+wyszukiwanie',
+  'usuń\\s+schedule',
+  'usuń\\s+harmonogram',
+  'usuń\\s+wyszukiwanie',
+  'delete\\s+schedule',
+  'remove\\s+schedule',
 ].join('|'), 'i');
 
 // ─── Intent classification prompt ─────────────────────────────────────────────

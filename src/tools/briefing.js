@@ -41,13 +41,16 @@ async function summarize(prompt) {
 }
 
 /**
- * Filter feed items to only those not yet seen, then mark them as seen.
+ * Filter feed items to only those not yet seen (does NOT mark them seen).
+ * Call markSeen() separately after applying any additional filters.
  */
 function filterNew(userId, items) {
-  const seen    = db.getBriefingSeenIds(userId);
-  const newOnes = items.filter(i => !seen.has(i.id));
-  if (newOnes.length) db.markBriefingSeen(userId, newOnes.map(i => i.id));
-  return newOnes;
+  const seen = db.getBriefingSeenIds(userId);
+  return items.filter(i => !seen.has(i.id));
+}
+
+function markSeen(userId, items) {
+  if (items.length) db.markBriefingSeen(userId, items.map(i => i.id));
 }
 
 /**
@@ -101,9 +104,12 @@ async function buildMorning(userId) {
   if (!feeds.length) return null;
 
   console.log(`[briefing] Morning for user ${userId} — fetching ${feeds.length} feed(s)…`);
-  const allItems     = await rss.fetchFeeds(feeds);
-  const newItems     = filterNew(userId, allItems);
+  const allItems      = await rss.fetchFeeds(feeds);
+  const newItems      = filterNew(userId, allItems);
   const filteredItems = applyKeywordFilter(userId, newItems);
+  // Mark only items that actually passed the keyword filter as seen.
+  // Items blocked by the filter are NOT marked — they'll retry if the filter changes.
+  markSeen(userId, filteredItems);
 
   if (!filteredItems.length) {
     return `🌅 *PORANNY RAPORT — ${today()}*\n\n_Brak nowych pozycji w feedach._`;
@@ -153,6 +159,7 @@ async function buildEvening(userId) {
   const allItems      = await rss.fetchFeeds(feeds);
   const newItems      = filterNew(userId, allItems);
   const filteredItems = applyKeywordFilter(userId, newItems);
+  markSeen(userId, filteredItems);
 
   if (!filteredItems.length) {
     return `🌙 *WIECZORNY RAPORT — ${today()}*\n\n_Brak nowych pozycji od porannego raportu._`;
