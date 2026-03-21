@@ -15,100 +15,10 @@ const ollama     = require('../llm/ollama');
 // Uses specific multi-word patterns to avoid false positives on conversational text.
 // Single-word triggers only when the word is highly specific to bot commands.
 
-const TRIGGER_RE = new RegExp([
-  // Reminders — high specificity, Polish + English
-  'przypomnij\\s+mi',
-  'przypomnij\\s+o',
-  'ustaw\\s+przypomnienie',
-  'remind\\s+me',
-  'set\\s+a\\s+reminder',
-  // Relative time patterns that strongly indicate reminder intent
-  'za\\s+\\d+\\s*(minut|min|godzin|godz|sekund|sek|h)',
-  'za\\s+pół\\s+godziny',
-  'za\\s+chwilę',
-
-  // Memory — high specificity
-  'zapamiętaj\\s+(że|sobie|iż)',
-  'pamiętaj\\s+że',
-  'zapisz\\s+że',
-  'zanotuj\\s+że',
-  'remember\\s+that',
-  'note\\s+that',
-
-  // Briefing run now
-  'odpal\\s+briefing',
-  'uruchom\\s+briefing',
-  'wyślij\\s+briefing',
-  'pokaż\\s+briefing',
-  'daj\\s+briefing',
-  'run\\s+briefing',
-  'send\\s+briefing',
-  'briefing\\s+now',
-  'briefing\\s+teraz',
-
-  // Briefing feeds — add/remove/list
-  'dodaj\\s+feed',
-  'dodaj\\s+rss',
-  'add\\s+feed',
-  'subscribe\\s+to',
-  'subskrybuj',
-  'usuń\\s+feed',
-  'remove\\s+feed',
-  'delete\\s+feed',
-  'moje\\s+feedy',
-  'lista\\s+feed',
-  'pokaż\\s+feedy',
-  'jakie\\s+mam\\s+feed',
-  'podaj\\s+feedy',
-  'show\\s+(my\\s+)?feeds',
-  'list\\s+(my\\s+)?feeds',
-
-  // Briefing on/off
-  'włącz\\s+(raporty|briefing|poranne|wieczorne|poranny|wieczorny)',
-  'wyłącz\\s+(raporty|briefing|poranne|wieczorne|poranny|wieczorny)',
-  'aktywuj\\s+(raporty|briefing)',
-  'dezaktywuj\\s+(raporty|briefing)',
-  'enable\\s+(briefing|reports)',
-  'disable\\s+(briefing|reports)',
-  'turn\\s+on\\s+(briefing|reports)',
-  'turn\\s+off\\s+(briefing|reports)',
-
-  // Briefing time configuration
-  'ustaw\\s+(poranny|wieczorny|poranne|wieczorne)\\s+raport',
-  'zmień\\s+godzinę\\s+(porannego|wieczornego)',
-  'poranny\\s+raport\\s+o',
-  'wieczorny\\s+raport\\s+o',
-  'morning\\s+(report|briefing)\\s+at',
-  'evening\\s+(report|briefing)\\s+at',
-  'set\\s+(morning|evening)\\s+(report|briefing)',
-  'morning\\s+at\\s+\\d',
-  'evening\\s+at\\s+\\d',
-
-  // Briefing keywords / filters
-  'filtruj\\s+(oferty|stanowiska|po)',
-  'dodaj\\s+(filtr|słowo\\s+kluczowe|keyword)',
-  'usuń\\s+(filtr|słowo\\s+kluczowe|keyword)',
-  'add\\s+(keyword|filter)',
-  'remove\\s+(keyword|filter)',
-  'filter\\s+(jobs|offers)',
-  'szukaj\\s+tylko',
-  'pokaż\\s+tylko\\s+(oferty|stanowiska)',
-
-  // Scheduled searches
-  'zaplanuj\\s+(codzienne|wyszukiwanie|harmonogram)',
-  'schedule\\s+(daily|search)',
-  'codziennie\\s+o\\s+\\d',
-  'every\\s+day\\s+at',
-  'dodaj\\s+harmonogram',
-  'dodaj\\s+schedule',
-  'dodaj\\s+zaplanowane',
-  'dodaj\\s+wyszukiwanie',
-  'usuń\\s+schedule',
-  'usuń\\s+harmonogram',
-  'usuń\\s+wyszukiwanie',
-  'delete\\s+schedule',
-  'remove\\s+schedule',
-].join('|'), 'i');
+// Broad gate: catches imperative verbs, URLs, and time patterns.
+// Deliberately over-inclusive — the LLM classifier handles disambiguation.
+// False positives are harmless because a confirmation step precedes execution.
+const TRIGGER_RE = /\b(dodaj|usuń|włącz|wyłącz|zaplanuj|ustaw|zmień|przypomnij|zapamiętaj|zanotuj|zapisz|pamiętaj|schedule|add|remove|delete|enable|disable|remind|remember|note|set|filter|subscribe|subskrybuj|list|show|pokaż|uruchom|odpal|wyślij|run|send|filtruj|aktywuj|dezaktywuj)\b|https?:\/\/|\b\d{1,2}:\d{2}\b|za\s+\d+\s*(min|godzin|sek|h)/i;
 
 // ─── Intent classification prompt ─────────────────────────────────────────────
 

@@ -23,6 +23,58 @@ const vision    = require('../tools/vision');
 const ALLOWED_IDS = (process.env.ALLOWED_USER_IDS || '')
   .split(',').map(s => s.trim()).filter(Boolean).map(Number);
 
+// ─── Intent confirmation state ────────────────────────────────────────────────
+// userId (string) → { intent, lang, params, chatId, msgId, timer }
+const pendingIntents = new Map();
+const CONFIRMATION_TTL = 90_000; // 90 seconds — auto-expire pending confirmations
+
+/** Human-readable summary of a detected intent, shown before user confirms. */
+function formatConfirmation(type, lang, params) {
+  const pl = lang !== 'en';
+  switch (type) {
+    case 'briefing_add_feed':
+      return `${pl ? 'Dodaj feed' : 'Add feed'} *${params.label || '?'}*\n` +
+             `URL: \`${params.url || '?'}\`\n` +
+             `${pl ? 'Kategoria' : 'Category'}: *${params.category || 'general'}*`;
+    case 'briefing_on':
+      return pl ? 'Włącz codzienne raporty briefing' : 'Enable daily briefing reports';
+    case 'briefing_off':
+      return pl ? 'Wyłącz codzienne raporty briefing' : 'Disable daily briefing reports';
+    case 'briefing_time_morning':
+      return (pl ? 'Ustaw poranny raport na' : 'Set morning briefing to') +
+             ` *${params.time || '?'}*` +
+             (params.enable ? (pl ? ' i włącz' : ' and enable') : '');
+    case 'briefing_time_evening':
+      return (pl ? 'Ustaw wieczorny raport na' : 'Set evening briefing to') +
+             ` *${params.time || '?'}*` +
+             (params.enable ? (pl ? ' i włącz' : ' and enable') : '');
+    case 'briefing_keywords_add':
+      return (pl ? 'Dodaj filtr słów kluczowych:' : 'Add keyword filter:') +
+             ` *${params.keyword || '?'}*`;
+    case 'briefing_keywords_remove':
+      return (pl ? 'Usuń filtr:' : 'Remove filter:') +
+             ` *${params.keyword || '?'}*`;
+    case 'briefing_run_now': {
+      const t = params.type === 'evening'
+        ? (pl ? 'wieczorny' : 'evening') : (pl ? 'poranny' : 'morning');
+      return (pl ? `Uruchom ${t} briefing teraz` : `Run ${t} briefing now`);
+    }
+    case 'schedule_add':
+      return (pl ? 'Zaplanuj wyszukiwanie codziennie o' : 'Schedule daily search at') +
+             ` *${params.time || '?'}*\n` +
+             (pl ? 'Zapytanie:' : 'Query:') + ` _${params.query || '?'}_`;
+    case 'remind':
+      return (pl ? 'Ustaw przypomnienie' : 'Set reminder') +
+             ` *${params.when || '?'}*\n` +
+             (pl ? 'Treść:' : 'Text:') + ` _${params.text || '?'}_`;
+    case 'remember':
+      return (pl ? 'Zapamiętaj fakt:' : 'Remember fact:') +
+             ` _${params.fact || '?'}_`;
+    default:
+      return type;
+  }
+}
+
 /**
  * Returns true if the user is authorized to use the bot.
  */
@@ -777,8 +829,37 @@ async function handleMessage(bot, msg) {
   // Natural language intent detection — runs only when trigger words present
   const intent = await intentHandler.detectIntent(text);
   if (intent) {
-    const handled = await executeIntent(bot, msg, intent);
-    if (handled) return;
+    const { intent: type, lang, params } = intent;
+
+    // Read-only intents execute immediately — no confirmation needed
+    if (type === 'briefing_list_feeds') {
+      const handled = await executeIntent(bot, msg, intent);
+      if (handled) return;
+    } else {
+      // All state-changing intents: show confirmation with inline buttons
+      const summary = formatConfirmation(type, lang, params);
+      const sent = await bot.sendMessage(chatId,
+        `🤖 *Czy o to chodziło?*\n${summary}`,
+        {
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [[
+              { text: '✅ Tak, wykonaj', callback_data: `confirm:${userId}` },
+              { text: '❌ Anuluj',       callback_data: `cancel:${userId}` },
+            ]],
+          },
+        }
+      );
+      // Overwrite any previous pending intent for this user
+      if (pendingIntents.has(String(userId))) {
+        clearTimeout(pendingIntents.get(String(userId)).timer);
+      }
+      const timer = setTimeout(() => pendingIntents.delete(String(userId)), CONFIRMATION_TTL);
+      pendingIntents.set(String(userId), {
+        intent, chatId, msgId: sent.message_id, timer,
+      });
+      return;
+    }
   }
 
   await bot.sendChatAction(chatId, 'typing');
@@ -914,6 +995,50 @@ function register(bot) {
     if (!m.text || m.text.startsWith('/')) return;
     return handleMessage(bot, m);
   }));
+
+  // ─── Intent confirmation (inline keyboard callbacks) ───────────────────────
+  bot.on('callback_query', async (query) => {
+    const data = query.data || '';
+    const colonIdx = data.indexOf(':');
+    if (colonIdx === -1) return bot.answerCallbackQuery(query.id);
+
+    const action       = data.slice(0, colonIdx);
+    const targetUserId = data.slice(colonIdx + 1);
+    const userId       = String(query.from.id);
+
+    // Only the original user may confirm/cancel their own pending action
+    if (userId !== targetUserId) {
+      return bot.answerCallbackQuery(query.id, { text: 'To nie twoja akcja.' });
+    }
+
+    const pending = pendingIntents.get(userId);
+    if (!pending) {
+      await bot.answerCallbackQuery(query.id, { text: 'Akcja wygasła lub już wykonana.' });
+      return;
+    }
+
+    // Clear pending state
+    clearTimeout(pending.timer);
+    pendingIntents.delete(userId);
+
+    // Remove buttons from the confirmation message
+    await bot.editMessageReplyMarkup(
+      { inline_keyboard: [] },
+      { chat_id: pending.chatId, message_id: pending.msgId }
+    ).catch(() => {});
+
+    if (action === 'confirm') {
+      await bot.answerCallbackQuery(query.id, { text: '✅ Wykonuję…' });
+      const fakeMsg = { chat: { id: pending.chatId }, from: { id: Number(userId) } };
+      await executeIntent(bot, fakeMsg, pending.intent);
+    } else {
+      await bot.answerCallbackQuery(query.id, { text: '❌ Anulowano.' });
+      await bot.sendMessage(pending.chatId,
+        '_Anulowano. Potraktuję to jako zwykłe pytanie._',
+        { parse_mode: 'Markdown' }
+      );
+    }
+  });
 }
 
 module.exports = { register };
