@@ -6,6 +6,7 @@
 
 require('dotenv').config();
 
+const os          = require('os');
 const TelegramBot = require('node-telegram-bot-api');
 const ollama      = require('./src/llm/ollama');
 const openrouter  = require('./src/llm/openrouter');
@@ -13,6 +14,8 @@ const commands    = require('./src/handlers/commands');
 const scheduler          = require('./src/scheduler/scheduler');
 const reminder           = require('./src/tools/reminder');
 const briefingScheduler  = require('./src/scheduler/briefingScheduler');
+const db          = require('./src/db/database');
+const lock        = require('./src/db/instanceLock');
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -21,7 +24,25 @@ if (!TOKEN) {
   process.exit(1);
 }
 
+async function startBot(bot) {
+  commands.register(bot);
+  await scheduler.init(bot);
+  await reminder.init(bot);
+  await briefingScheduler.init(bot);
+
+  bot.on('polling_error', err => {
+    console.error('[Polling error]', err.code, err.message);
+  });
+
+  bot.on('error', err => {
+    console.error('[Bot error]', err.message);
+  });
+}
+
 async function main() {
+  // 1. Init DB schema (idempotent CREATE IF NOT EXISTS)
+  await db.init();
+
   const orKey = !!process.env.OPENROUTER_API_KEY;
 
   if (orKey) {
@@ -45,23 +66,31 @@ async function main() {
   }
 
   const bot = new TelegramBot(TOKEN, {
-    polling: { params: { allowed_updates: ['message', 'callback_query'] } },
+    polling: false,  // start polling only after lock acquired
   });
 
-  commands.register(bot);
+  // 2. Instance lock — only one instance polls Telegram at a time
+  const instanceId = `${os.hostname()}-${process.pid}`;
+  const acquired = await lock.acquire(instanceId);
 
-  // Restore scheduled searches, reminders and briefings from disk
-  scheduler.init(bot);
-  reminder.init(bot);
-  briefingScheduler.init(bot);
+  if (!acquired) {
+    console.log('[lock] Another instance is active — entering standby mode.');
+    // Start bot without polling, just standby
+    await lock.waitForTakeover(instanceId, async () => {
+      // On takeover, restart with polling
+      await bot.startPolling({ params: { allowed_updates: ['message', 'callback_query'] } });
+      await startBot(bot);
+      console.log('🤖 Took over as primary. Bot is now active.');
+    });
+  } else {
+    lock.startHeartbeat(instanceId);
+    await bot.startPolling({ params: { allowed_updates: ['message', 'callback_query'] } });
+    await startBot(bot);
+  }
 
-  bot.on('polling_error', err => {
-    console.error('[Polling error]', err.code, err.message);
-  });
-
-  bot.on('error', err => {
-    console.error('[Bot error]', err.message);
-  });
+  // Graceful shutdown
+  process.once('SIGINT',  () => lock.release(instanceId).then(() => process.exit(0)));
+  process.once('SIGTERM', () => lock.release(instanceId).then(() => process.exit(0)));
 
   const searchMode = process.env.SERPER_API_KEY ? 'Serper (Google)' : 'DuckDuckGo (fallback)';
 

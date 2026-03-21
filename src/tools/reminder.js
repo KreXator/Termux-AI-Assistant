@@ -94,7 +94,9 @@ function armReminder(bot, { id, chatId, userId, text, fireAt }) {
  * Write current reminder state to disk (strips in-memory-only timeoutId).
  */
 function persist() {
-  db.saveReminders([...reminders.values()]);
+  db.saveReminders([...reminders.values()]).catch(err =>
+    console.error('[reminder] persist failed:', err.message)
+  );
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -104,8 +106,8 @@ function persist() {
  * Expired reminders are skipped automatically (filtered in loadReminders).
  * @param {TelegramBot} bot
  */
-function init(bot) {
-  const saved = db.loadReminders();
+async function init(bot) {
+  const saved = await db.loadReminders();
   for (const r of saved) {
     armReminder(bot, r);
   }

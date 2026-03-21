@@ -150,7 +150,8 @@ async function handleStart(bot, msg) {
     `Send a 🎤 voice message — I'll transcribe it\n` +
     `Send a 📷 photo — I'll describe it\n\n` +
     `*Dev*\n` +
-    `/run [code] — execute JS code\n\n` +
+    `/run [code] — execute JS code\n` +
+    `/update — pull latest version from GitHub and restart\n\n` +
     `*Memory tips*\n` +
     `• Bot keeps ~50k tokens of conversation history automatically\n` +
     `• /remember [fact] — save facts that survive /clear and restarts\n` +
@@ -167,10 +168,63 @@ async function handleHelp(bot, msg) {
   return handleStart(bot, msg);
 }
 
+// ─── /update — pull latest version from GitHub and restart ───────────────────
+
+async function handleUpdate(bot, msg) {
+  const chatId = msg.chat.id;
+  const { execFile } = require('child_process');
+  const path = require('path');
+  const ROOT = path.resolve(__dirname, '../../');
+
+  const run = (cmd, args) => new Promise((resolve, reject) => {
+    execFile(cmd, args, { cwd: ROOT, shell: true }, (err, stdout, stderr) => {
+      if (err) reject(new Error(stderr || err.message));
+      else resolve(stdout.trim());
+    });
+  });
+
+  try {
+    // 1. Check for new commits without pulling
+    await run('git', ['fetch', 'origin']);
+    const localHash  = await run('git', ['rev-parse', 'HEAD']);
+    const remoteHash = await run('git', ['rev-parse', 'origin/main']);
+
+    if (localHash === remoteHash) {
+      return bot.sendMessage(chatId, '✅ Already up to date. No update needed.');
+    }
+
+    // 2. Show what's incoming
+    const log = await run('git', ['log', '--oneline', `HEAD..origin/main`]);
+    await bot.sendMessage(chatId,
+      `🔄 *Update available!*\n\nNew commits:\n\`\`\`\n${log}\n\`\`\`\nPulling and restarting…`,
+      { parse_mode: 'Markdown' }
+    );
+
+    // 3. Pull
+    await run('git', ['pull', 'origin', 'main']);
+
+    // 4. npm install only if package.json changed
+    const changed = await run('git', ['diff', 'HEAD~1', 'HEAD', '--name-only']);
+    if (changed.includes('package.json')) {
+      await bot.sendMessage(chatId, '📦 package.json changed — running npm install…');
+      await run('npm', ['install', '--omit=dev']);
+    }
+
+    await bot.sendMessage(chatId, '✅ Update done. Restarting…');
+
+    // 5. Restart — rely on PM2 / nodemon / wrapper script to bring it back up
+    setTimeout(() => process.exit(0), 1000);
+
+  } catch (err) {
+    console.error('[update] error:', err);
+    await bot.sendMessage(chatId, `❌ Update failed:\n\`${err.message}\``);
+  }
+}
+
 async function handleStatus(bot, msg) {
   const userId      = msg.from.id;
-  const cfg         = db.getConfig(userId);
-  const schedules   = db.getSchedules(userId);
+  const cfg         = await db.getConfig(userId);
+  const schedules   = await db.getSchedules(userId);
   const searchMode  = process.env.SERPER_API_KEY ? '✅ Serper (Google)' : '⚠️ DuckDuckGo scrape';
   const orKey       = !!process.env.OPENROUTER_API_KEY;
   const orAlive     = orKey ? await llm.isOpenRouterReachable() : false;
@@ -198,7 +252,7 @@ async function handleStatus(bot, msg) {
 }
 
 async function handleClear(bot, msg) {
-  db.clearHistory(msg.from.id);
+  await db.clearHistory(msg.from.id);
   await bot.sendMessage(msg.chat.id, '🗑 Conversation context cleared.');
 }
 
@@ -216,7 +270,7 @@ const MODEL_ALIASES = {
 async function handleModel(bot, msg, args) {
   const userId = msg.from.id;
   if (!args.length) {
-    const cfg = db.getConfig(userId);
+    const cfg = await db.getConfig(userId);
     return bot.sendMessage(msg.chat.id,
       `Current model: \`${cfg.model}\` ${cfg.manualModel ? '_(manual override)_' : '_(auto-routed)_'}\n\n` +
       `Available shortcuts:\n` +
@@ -227,11 +281,11 @@ async function handleModel(bot, msg, args) {
   }
   const input     = args.join(' ').toLowerCase();
   if (input === 'auto') {
-    db.setConfig(userId, { model: router.MODEL_SMALL, manualModel: false });
+    await db.setConfig(userId, { model: router.MODEL_SMALL, manualModel: false });
     return bot.sendMessage(msg.chat.id, '✅ Auto-routing re-enabled.');
   }
   const modelName = MODEL_ALIASES[input] || args.join(' ');
-  db.setConfig(userId, { model: modelName, manualModel: true });
+  await db.setConfig(userId, { model: modelName, manualModel: true });
   await bot.sendMessage(msg.chat.id,
     `✅ Model switched to \`${modelName}\`. Auto-routing disabled.\nUse \`/model auto\` to re-enable.`
   );
@@ -245,7 +299,7 @@ async function handleModels(bot, msg) {
 async function handlePersona(bot, msg, args) {
   const userId  = msg.from.id;
   const persona = args[0] || 'default';
-  db.setConfig(userId, { persona });
+  await db.setConfig(userId, { persona });
   await bot.sendMessage(msg.chat.id, `🎭 Persona set to: *${persona}*`);
 }
 
@@ -255,7 +309,7 @@ async function handleInstruct(bot, msg, args) {
   const userId = msg.from.id;
 
   if (!args.length || args[0] === 'show') {
-    const cfg = db.getConfig(userId);
+    const cfg = await db.getConfig(userId);
     if (!cfg.customInstruction)
       return bot.sendMessage(msg.chat.id,
         'No custom instruction set.\nUsage: `/instruct [your system prompt text]`'
@@ -264,12 +318,12 @@ async function handleInstruct(bot, msg, args) {
   }
 
   if (args[0] === 'clear') {
-    db.setConfig(userId, { customInstruction: null });
+    await db.setConfig(userId, { customInstruction: null });
     return bot.sendMessage(msg.chat.id, '✅ Custom instruction cleared. Back to persona.');
   }
 
   const instruction = args.join(' ');
-  db.setConfig(userId, { customInstruction: instruction });
+  await db.setConfig(userId, { customInstruction: instruction });
   await bot.sendMessage(msg.chat.id,
     `✅ Custom instruction saved! This replaces your persona for all future messages.\n` +
     `Use \`/instruct clear\` to revert.`
@@ -279,7 +333,7 @@ async function handleInstruct(bot, msg, args) {
 // ─── Memory ──────────────────────────────────────────────────────────────────
 
 async function handleMemory(bot, msg) {
-  const facts = db.getMemory(msg.from.id);
+  const facts = await db.getMemory(msg.from.id);
   if (!facts.length)
     return bot.sendMessage(msg.chat.id, 'No memories stored yet. Use /remember [fact].');
   const list = facts.map((f, i) => `${i + 1}. ${f.fact} _(${f.ts.slice(0, 10)})_`).join('\n');
@@ -289,19 +343,19 @@ async function handleMemory(bot, msg) {
 async function handleRemember(bot, msg, args) {
   if (!args.length)
     return bot.sendMessage(msg.chat.id, 'Usage: /remember [fact about you]');
-  db.addMemory(msg.from.id, args.join(' '));
+  await db.addMemory(msg.from.id, args.join(' '));
   await bot.sendMessage(msg.chat.id, '✅ Noted!');
 }
 
 async function handleForget(bot, msg) {
-  db.forgetAll(msg.from.id);
+  await db.forgetAll(msg.from.id);
   await bot.sendMessage(msg.chat.id, '🗑 All memories cleared.');
 }
 
 // ─── Notes ──────────────────────────────────────────────────────────────────
 
 async function handleNotes(bot, msg) {
-  const notes = db.getNotes(msg.from.id);
+  const notes = await db.getNotes(msg.from.id);
   if (!notes.length)
     return bot.sendMessage(msg.chat.id, 'No notes yet. Use /note [text].');
   const list = notes.map((n, i) => `${i + 1}. ${n.note} _(${n.ts.slice(0, 10)})_`).join('\n');
@@ -311,7 +365,7 @@ async function handleNotes(bot, msg) {
 async function handleNote(bot, msg, args) {
   if (!args.length)
     return bot.sendMessage(msg.chat.id, 'Usage: /note [note text]');
-  db.addNote(msg.from.id, args.join(' '));
+  await db.addNote(msg.from.id, args.join(' '));
   await bot.sendMessage(msg.chat.id, '✅ Note saved!');
 }
 
@@ -319,7 +373,7 @@ async function handleDelNote(bot, msg, args) {
   const n = parseInt(args[0], 10);
   if (isNaN(n) || n < 1)
     return bot.sendMessage(msg.chat.id, 'Usage: /delnote [note number]');
-  const deleted = db.deleteNote(msg.from.id, n - 1);
+  const deleted = await db.deleteNote(msg.from.id, n - 1);
   if (!deleted)
     return bot.sendMessage(msg.chat.id, `❌ No note #${n}. Use /notes to see your list.`);
   await bot.sendMessage(msg.chat.id, `🗑 Note #${n} deleted.`);
@@ -328,7 +382,7 @@ async function handleDelNote(bot, msg, args) {
 // ─── Todos ───────────────────────────────────────────────────────────────────
 
 async function handleTodos(bot, msg) {
-  const todos = db.getTodos(msg.from.id);
+  const todos = await db.getTodos(msg.from.id);
   if (!todos.length)
     return bot.sendMessage(msg.chat.id, 'No tasks yet. Use /task [text].');
   const list = todos
@@ -340,7 +394,7 @@ async function handleTodos(bot, msg) {
 async function handleTask(bot, msg, args) {
   if (!args.length)
     return bot.sendMessage(msg.chat.id, 'Usage: /task [task description]');
-  db.addTodo(msg.from.id, args.join(' '));
+  await db.addTodo(msg.from.id, args.join(' '));
   await bot.sendMessage(msg.chat.id, '✅ Task added!');
 }
 
@@ -348,7 +402,7 @@ async function handleDone(bot, msg, args) {
   const n = parseInt(args[0], 10);
   if (isNaN(n) || n < 1)
     return bot.sendMessage(msg.chat.id, 'Usage: /done [task number]');
-  const marked = db.doneTodo(msg.from.id, n - 1);
+  const marked = await db.doneTodo(msg.from.id, n - 1);
   if (!marked)
     return bot.sendMessage(msg.chat.id, `❌ No task #${n}. Use /todo to see your list.`);
   await bot.sendMessage(msg.chat.id, `✅ Task #${n} marked as done.`);
@@ -381,7 +435,7 @@ async function handleSchedule(bot, msg, args) {
     if (!/^\d{1,2}:\d{2}$/.test(timeArg))
       return bot.sendMessage(chatId, '❌ Invalid time format. Use HH:MM e.g. `08:00`');
 
-    const schedule = db.addSchedule(userId, chatId, query, timeArg);
+    const schedule = await db.addSchedule(userId, chatId, query, timeArg);
     scheduler.add(schedule);
 
     const tz = process.env.TZ || 'Europe/Warsaw';
@@ -400,7 +454,7 @@ async function handleSchedule(bot, msg, args) {
     const n = parseInt(args[1], 10);
     if (isNaN(n) || n < 1)
       return bot.sendMessage(chatId, 'Usage: /schedule test [number]');
-    const schedules = db.getSchedules(userId);
+    const schedules = await db.getSchedules(userId);
     if (n > schedules.length)
       return bot.sendMessage(chatId, `❌ No schedule #${n}. Use /schedules to see your list.`);
     await bot.sendMessage(chatId, `⏳ Running schedule #${n} now...`);
@@ -417,7 +471,7 @@ async function handleSchedule(bot, msg, args) {
     const n = parseInt(args[1], 10);
     if (isNaN(n) || n < 1)
       return bot.sendMessage(chatId, 'Usage: /schedule del [number]');
-    const removed = db.removeSchedule(userId, n - 1);
+    const removed = await db.removeSchedule(userId, n - 1);
     if (!removed)
       return bot.sendMessage(chatId, `❌ No schedule #${n}. Use /schedules to see your list.`);
     scheduler.remove(removed.id);
@@ -429,7 +483,7 @@ async function handleSchedule(bot, msg, args) {
 }
 
 async function handleScheduleList(bot, msg) {
-  const schedules = db.getSchedules(msg.from.id);
+  const schedules = await db.getSchedules(msg.from.id);
   if (!schedules.length)
     return bot.sendMessage(msg.chat.id,
       'No schedules yet.\nUse `/schedule add HH:MM [query]` to create one.',
@@ -626,7 +680,7 @@ async function executeIntent(bot, msg, intent) {
   const userId = msg.from.id;
 
   // Store chatId for briefing scheduler
-  db.setBriefingConfig(userId, { chatId });
+  await db.setBriefingConfig(userId, { chatId });
 
   switch (type) {
     case 'briefing_add_feed': {
@@ -638,7 +692,7 @@ async function executeIntent(bot, msg, intent) {
           { parse_mode: 'Markdown' });
         return true;
       }
-      db.addBriefingFeed(userId, url, label, category);
+      await db.addBriefingFeed(userId, url, label, category);
       await bot.sendMessage(chatId,
         `✅ ${t(lang, 'Feed added', 'Feed dodany')}: \`${label}\` (${category})\n${url}`,
         { parse_mode: 'Markdown' });
@@ -646,17 +700,17 @@ async function executeIntent(bot, msg, intent) {
     }
 
     case 'briefing_on': {
-      const feeds = db.getBriefingFeeds(userId);
+      const feeds = await db.getBriefingFeeds(userId);
       if (!feeds.length) {
         await bot.sendMessage(chatId,
           t(lang, '⚠️ Add an RSS feed first. E.g: "add feed https://... as myfeed category jobs"',
                   '⚠️ Najpierw dodaj feed RSS. Np: "dodaj feed https://... jako myfeed z kategorią jobs"'));
         return true;
       }
-      db.setBriefingConfig(userId, { morningEnabled: true, eveningEnabled: true, chatId });
+      await db.setBriefingConfig(userId, { morningEnabled: true, eveningEnabled: true, chatId });
       const bSched = require('../scheduler/briefingScheduler');
-      bSched.reload(userId, chatId);
-      const cfg = db.getBriefingConfig(userId);
+      await bSched.reload(userId, chatId);
+      const cfg = await db.getBriefingConfig(userId);
       await bot.sendMessage(chatId,
         `✅ ${t(lang, 'Reports enabled', 'Raporty włączone')}.\n${t(lang, 'Morning', 'Poranny')}: *${cfg.morningTime}* | ${t(lang, 'Evening', 'Wieczorny')}: *${cfg.eveningTime}*`,
         { parse_mode: 'Markdown' });
@@ -664,9 +718,9 @@ async function executeIntent(bot, msg, intent) {
     }
 
     case 'briefing_off': {
-      db.setBriefingConfig(userId, { morningEnabled: false, eveningEnabled: false });
+      await db.setBriefingConfig(userId, { morningEnabled: false, eveningEnabled: false });
       const bSched = require('../scheduler/briefingScheduler');
-      bSched.reload(userId, chatId);
+      await bSched.reload(userId, chatId);
       await bot.sendMessage(chatId, `⏹ ${t(lang, 'Reports disabled.', 'Raporty wyłączone.')}`);
       return true;
     }
@@ -686,9 +740,9 @@ async function executeIntent(bot, msg, intent) {
       const labelStr  = isMorning ? t(lang, 'morning', 'porannego') : t(lang, 'evening', 'wieczornego');
       const updates   = { [timeKey]: time };
       if (enable) updates[enableKey] = true;
-      db.setBriefingConfig(userId, updates);
+      await db.setBriefingConfig(userId, updates);
       const bSched = require('../scheduler/briefingScheduler');
-      bSched.reload(userId, chatId);
+      await bSched.reload(userId, chatId);
       const onOff = enable ? t(lang, ' and enabled', ' i włączony') : '';
       await bot.sendMessage(chatId,
         `✅ ${t(lang, 'Time for', 'Godzina')} ${labelStr} ${t(lang, 'report', 'raportu')}: *${time}*${onOff}`,
@@ -702,7 +756,7 @@ async function executeIntent(bot, msg, intent) {
         await bot.sendMessage(chatId, t(lang, '⚠️ Could not detect keyword.', '⚠️ Nie rozpoznałem słowa kluczowego.'));
         return true;
       }
-      const added = db.addBriefingKeyword(userId, keyword);
+      const added = await db.addBriefingKeyword(userId, keyword);
       await bot.sendMessage(chatId,
         added
           ? `✅ ${t(lang, 'Filter', 'Filtr')} \`${keyword.toLowerCase()}\` ${t(lang, 'added to job offers.', 'dodany do ofert pracy.')}`
@@ -717,7 +771,7 @@ async function executeIntent(bot, msg, intent) {
         await bot.sendMessage(chatId, t(lang, '⚠️ Could not detect keyword.', '⚠️ Nie rozpoznałem słowa kluczowego.'));
         return true;
       }
-      const ok = db.removeBriefingKeyword(userId, keyword);
+      const ok = await db.removeBriefingKeyword(userId, keyword);
       await bot.sendMessage(chatId,
         ok
           ? `✅ ${t(lang, 'Filter', 'Filtr')} \`${keyword.toLowerCase()}\` ${t(lang, 'removed.', 'usunięty.')}`
@@ -728,7 +782,7 @@ async function executeIntent(bot, msg, intent) {
 
     case 'briefing_run_now': {
       const type = params.type === 'evening' ? 'evening' : 'morning';
-      const feeds = db.getBriefingFeeds(userId);
+      const feeds = await db.getBriefingFeeds(userId);
       if (!feeds.length) {
         await bot.sendMessage(chatId,
           t(lang, '⚠️ No feeds configured. Add one: `/briefing add <url> <label>`',
@@ -743,7 +797,7 @@ async function executeIntent(bot, msg, intent) {
     }
 
     case 'briefing_list_feeds': {
-      const feeds = db.getBriefingFeeds(userId);
+      const feeds = await db.getBriefingFeeds(userId);
       if (!feeds.length) {
         await bot.sendMessage(chatId,
           t(lang,
@@ -762,7 +816,7 @@ async function executeIntent(bot, msg, intent) {
     }
 
     case 'schedule_list': {
-      const schedules = db.getSchedules(userId);
+      const schedules = await db.getSchedules(userId);
       if (!schedules.length) {
         await bot.sendMessage(chatId,
           t(lang, '_No scheduled searches._\nAdd one: `/schedule add HH:MM [query]`',
@@ -787,7 +841,7 @@ async function executeIntent(bot, msg, intent) {
           { parse_mode: 'Markdown' });
         return true;
       }
-      const schedule = db.addSchedule(userId, chatId, query, time);
+      const schedule = await db.addSchedule(userId, chatId, query, time);
       scheduler.add(schedule);
       const tz = process.env.TZ || 'Europe/Warsaw';
       await bot.sendMessage(chatId,
@@ -826,7 +880,7 @@ async function executeIntent(bot, msg, intent) {
           t(lang, '⚠️ Could not detect the fact to remember.', '⚠️ Nie rozpoznałem faktu do zapamiętania.'));
         return true;
       }
-      db.addMemory(userId, fact);
+      await db.addMemory(userId, fact);
       await bot.sendMessage(chatId,
         `🧠 ${t(lang, 'Got it:', 'Zapamiętałem:')} _${fact}_`,
         { parse_mode: 'Markdown' });
@@ -847,8 +901,8 @@ async function handleMessage(bot, msg) {
   if (!text) return;
 
   // Store chatId so scheduler can push messages even without a prior message
-  const cfg = db.getConfig(userId);
-  if (cfg.chatId !== chatId) db.setConfig(userId, { chatId });
+  const cfg = await db.getConfig(userId);
+  if (cfg.chatId !== chatId) await db.setConfig(userId, { chatId });
 
   // Natural language intent detection — runs only when trigger words present
   const intent = await intentHandler.detectIntent(text);
@@ -891,8 +945,19 @@ async function handleMessage(bot, msg) {
   const manualModel = cfg.manualModel ? cfg.model : null;
 
   // Decide: web search needed?
-  const needsSearch = /\b(search|wyszukaj|google|find|znajdź).+\b/i.test(text) ||
-                      (/\bco to jest\b/i.test(text) && text.length > 40);
+  const needsSearch =
+    // Explicit search request
+    /\b(search|wyszukaj|google|find|znajdź)\b.+/i.test(text) ||
+    // "what is X" — factual lookup
+    (/\bco to jest\b/i.test(text) && text.length > 40) ||
+    // Current/today/recent info
+    /\b(dzisiaj|dzisiejszy|dzisiejsz\w*|wczoraj|teraz|aktualnie|obecnie|today|yesterday|right now|latest|najnowszy\w*|najnowsze\w*)\b/i.test(text) ||
+    // Sports / results
+    /\b(kto wygrał|who won|wyniki\b|results?\b|score|standings|tabela ligowa|klasyfikacja)\b/i.test(text) ||
+    // Prices / rates / crypto
+    /\b(aktualna cena|aktualny kurs|kurs\s+\w+|price of|notowania|bitcoin|btc|eth\b|crypto)\b/i.test(text) ||
+    // News
+    /\b(news|wiadomości\b|aktualności\b|headlines)\b/i.test(text);
 
   let enriched = text;
   if (needsSearch) {
@@ -1009,6 +1074,8 @@ function register(bot) {
 
   bot.onText(/^\/briefing(?:\s+([\s\S]+))?$/, guard((m, match) =>
     briefingCmd.handle(bot, m, match[1]?.trim().split(/\s+/) || [])));
+
+  bot.onText(/^\/update$/, guard(m => handleUpdate(bot, m)));
 
   bot.on('message', guard(m => {
     // Voice message

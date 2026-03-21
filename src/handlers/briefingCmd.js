@@ -46,13 +46,13 @@ async function handle(bot, msg, args) {
   const sub    = args[0]?.toLowerCase();
 
   // store chatId so scheduler can send proactive messages
-  db.setBriefingConfig(userId, { chatId });
+  await db.setBriefingConfig(userId, { chatId });
 
   // ── /briefing (no args) ───────────────────────────────────────────────────
   if (!sub) {
-    const cfg      = db.getBriefingConfig(userId);
-    const feeds    = db.getBriefingFeeds(userId);
-    const keywords = db.getBriefingKeywords(userId);
+    const cfg      = await db.getBriefingConfig(userId);
+    const feeds    = await db.getBriefingFeeds(userId);
+    const keywords = await db.getBriefingKeywords(userId);
     const lines = [
       `*📰 Daily Briefing — status*`,
       ``,
@@ -74,16 +74,16 @@ async function handle(bot, msg, args) {
 
   // ── /briefing on ─────────────────────────────────────────────────────────
   if (sub === 'on') {
-    const feeds = db.getBriefingFeeds(userId);
+    const feeds = await db.getBriefingFeeds(userId);
     if (!feeds.length) {
       return bot.sendMessage(chatId,
         '⚠️ Najpierw dodaj feed RSS:\n`/briefing add <url> <label>`',
         { parse_mode: 'Markdown' }
       );
     }
-    db.setBriefingConfig(userId, { morningEnabled: true, eveningEnabled: true, chatId });
-    bScheduler.reload(userId, chatId);
-    const cfg = db.getBriefingConfig(userId);
+    await db.setBriefingConfig(userId, { morningEnabled: true, eveningEnabled: true, chatId });
+    await bScheduler.reload(userId, chatId);
+    const cfg = await db.getBriefingConfig(userId);
     return bot.sendMessage(chatId,
       `✅ Raporty włączone.\nPoranny: *${cfg.morningTime}* | Wieczorny: *${cfg.eveningTime}*`,
       { parse_mode: 'Markdown' }
@@ -92,8 +92,8 @@ async function handle(bot, msg, args) {
 
   // ── /briefing off ─────────────────────────────────────────────────────────
   if (sub === 'off') {
-    db.setBriefingConfig(userId, { morningEnabled: false, eveningEnabled: false });
-    bScheduler.reload(userId, chatId);
+    await db.setBriefingConfig(userId, { morningEnabled: false, eveningEnabled: false });
+    await bScheduler.reload(userId, chatId);
     return bot.sendMessage(chatId, '⏹ Raporty wyłączone.');
   }
 
@@ -108,8 +108,8 @@ async function handle(bot, msg, args) {
       );
     }
     const key = type === 'morning' ? 'morningTime' : 'eveningTime';
-    db.setBriefingConfig(userId, { [key]: time });
-    bScheduler.reload(userId, chatId);
+    await db.setBriefingConfig(userId, { [key]: time });
+    await bScheduler.reload(userId, chatId);
     return bot.sendMessage(chatId,
       `✅ Godzina ${type === 'morning' ? 'porannego' : 'wieczornego'} raportu: *${time}*`,
       { parse_mode: 'Markdown' }
@@ -127,7 +127,7 @@ async function handle(bot, msg, args) {
         { parse_mode: 'Markdown' }
       );
     }
-    db.addBriefingFeed(userId, url, label, category);
+    await db.addBriefingFeed(userId, url, label, category);
     return bot.sendMessage(chatId,
       `✅ Feed dodany: \`${label}\` (${category})\n${url}`,
       { parse_mode: 'Markdown' }
@@ -140,13 +140,13 @@ async function handle(bot, msg, args) {
     if (!label) {
       return bot.sendMessage(chatId, 'Użycie: `/briefing remove <label>`', { parse_mode: 'Markdown' });
     }
-    const ok = db.removeBriefingFeed(userId, label);
+    const ok = await db.removeBriefingFeed(userId, label);
     return bot.sendMessage(chatId, ok ? `✅ Feed \`${label}\` usunięty.` : `❌ Nie znaleziono feeda \`${label}\`.`, { parse_mode: 'Markdown' });
   }
 
   // ── /briefing list ────────────────────────────────────────────────────────
   if (sub === 'list') {
-    const feeds = db.getBriefingFeeds(userId);
+    const feeds = await db.getBriefingFeeds(userId);
     if (!feeds.length) {
       return bot.sendMessage(chatId, '_Brak skonfigurowanych feedów._\nDodaj: `/briefing add <url> <label>`', { parse_mode: 'Markdown' });
     }
@@ -163,7 +163,7 @@ async function handle(bot, msg, args) {
     const keyword = args.slice(2).join(' ').trim();
 
     if (action === 'list') {
-      const kws = db.getBriefingKeywords(userId);
+      const kws = await db.getBriefingKeywords(userId);
       if (!kws.length) {
         return bot.sendMessage(chatId,
           '_Brak filtrów. Dodaj: `/briefing keywords add <słowo>`_\n' +
@@ -181,7 +181,7 @@ async function handle(bot, msg, args) {
       if (!keyword) {
         return bot.sendMessage(chatId, 'Użycie: `/briefing keywords add <słowo>`', { parse_mode: 'Markdown' });
       }
-      const added = db.addBriefingKeyword(userId, keyword);
+      const added = await db.addBriefingKeyword(userId, keyword);
       return bot.sendMessage(chatId,
         added ? `✅ Filtr \`${keyword.toLowerCase()}\` dodany.` : `ℹ️ Filtr \`${keyword.toLowerCase()}\` już istnieje.`,
         { parse_mode: 'Markdown' }
@@ -192,7 +192,7 @@ async function handle(bot, msg, args) {
       if (!keyword) {
         return bot.sendMessage(chatId, 'Użycie: `/briefing keywords remove <słowo>`', { parse_mode: 'Markdown' });
       }
-      const ok = db.removeBriefingKeyword(userId, keyword);
+      const ok = await db.removeBriefingKeyword(userId, keyword);
       return bot.sendMessage(chatId,
         ok ? `✅ Filtr \`${keyword.toLowerCase()}\` usunięty.` : `❌ Nie znaleziono filtru \`${keyword.toLowerCase()}\`.`,
         { parse_mode: 'Markdown' }
@@ -211,7 +211,7 @@ async function handle(bot, msg, args) {
     if (!['morning', 'evening'].includes(type)) {
       return bot.sendMessage(chatId, 'Użycie: `/briefing now morning` lub `/briefing now evening`', { parse_mode: 'Markdown' });
     }
-    const feeds = db.getBriefingFeeds(userId);
+    const feeds = await db.getBriefingFeeds(userId);
     if (!feeds.length) {
       return bot.sendMessage(chatId, '⚠️ Brak feedów. Dodaj: `/briefing add <url> <label>`', { parse_mode: 'Markdown' });
     }

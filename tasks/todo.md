@@ -1,8 +1,8 @@
 # Task: Termux AI Assistant
 
-- [/] Konfiguracja projektu i narzędzi
-    - [ ] `npm init` z podstawowymi zależnościami (node-telegram-bot-api, lowdb, axios, duck-duck-scrape)
-    - [ ] Utworzenie struktury katalogów `src/`, `config/`, `data/`
+- [x] Konfiguracja projektu i narzędzi
+    - [x] `npm init` z podstawowymi zależnościami (node-telegram-bot-api, lowdb, axios, duck-duck-scrape)
+    - [x] Utworzenie struktury katalogów `src/`, `config/`, `data/`
 
 - [ ] System Pamięci i Bazy Danych
     - [ ] Przygotowanie pliku w module `src/db/` na połączenie w LowDB (lub innej strukturze w czystym JSON)

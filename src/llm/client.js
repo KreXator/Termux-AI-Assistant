@@ -42,7 +42,7 @@ function getSystemPrompt(persona = 'default') {
  * Persists the trimmed result so the data file doesn't grow indefinitely.
  */
 async function pruneHistory(userId) {
-  const history = db.getHistory(userId);
+  const history = await db.getHistory(userId);
 
   // Walk backwards, accumulating chars until we hit the budget
   let kept       = [];
@@ -58,7 +58,7 @@ async function pruneHistory(userId) {
   if (kept.length > HISTORY_WINDOW) kept = kept.slice(-HISTORY_WINDOW);
 
   // Persist trimmed version so the JSON file doesn't grow unboundedly
-  if (kept.length < history.length) db.saveHistory(userId, kept);
+  if (kept.length < history.length) await db.saveHistory(userId, kept);
 
   return kept;
 }
@@ -123,11 +123,11 @@ async function tryOpenRouterWithCascade(model, messages) {
  */
 async function chat({ userId, userMessage, model, persona = 'default', customInstruction = null }) {
   // 1. Persist user message
-  db.appendMessage(userId, 'user', userMessage);
+  await db.appendMessage(userId, 'user', userMessage);
 
   // 2. Build history + memory + system prompt
   const history   = await pruneHistory(userId);
-  const memFacts  = db.getMemory(userId);
+  const memFacts  = await db.getMemory(userId);
   const memBlock  = memFacts.length
     ? `\n\nKnown facts about the user:\n${memFacts.map(f => `- ${f.fact}`).join('\n')}`
     : '';
@@ -154,7 +154,7 @@ async function chat({ userId, userMessage, model, persona = 'default', customIns
   }
 
   // 4. Persist assistant reply
-  db.appendMessage(userId, 'assistant', reply);
+  await db.appendMessage(userId, 'assistant', reply);
 
   return reply;
 }

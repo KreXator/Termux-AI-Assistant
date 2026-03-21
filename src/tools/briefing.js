@@ -44,13 +44,13 @@ async function summarize(prompt) {
  * Filter feed items to only those not yet seen (does NOT mark them seen).
  * Call markSeen() separately after applying any additional filters.
  */
-function filterNew(userId, items) {
-  const seen = db.getBriefingSeenIds(userId);
+async function filterNew(userId, items) {
+  const seen = await db.getBriefingSeenIds(userId);
   return items.filter(i => !seen.has(i.id));
 }
 
-function markSeen(userId, items) {
-  if (items.length) db.markBriefingSeen(userId, items.map(i => i.id));
+async function markSeen(userId, items) {
+  if (items.length) await db.markBriefingSeen(userId, items.map(i => i.id));
 }
 
 /**
@@ -59,8 +59,8 @@ function markSeen(userId, items) {
  * Jobs items are kept only if at least one keyword matches title or summary.
  * If user has no keywords, all job items pass through.
  */
-function applyKeywordFilter(userId, items) {
-  const keywords = db.getBriefingKeywords(userId);
+async function applyKeywordFilter(userId, items) {
+  const keywords = await db.getBriefingKeywords(userId);
   if (!keywords.length) return items;
   return items.filter(item => {
     if (item.category !== 'jobs') return true;
@@ -100,23 +100,23 @@ function formatItems(items, maxPerCategory = 8) {
  * Returns null if no feeds configured or no new items.
  */
 async function buildMorning(userId) {
-  const feeds = db.getBriefingFeeds(userId);
+  const feeds = await db.getBriefingFeeds(userId);
   if (!feeds.length) return null;
 
   console.log(`[briefing] Morning for user ${userId} — fetching ${feeds.length} feed(s)…`);
   const allItems      = await rss.fetchFeeds(feeds);
-  const newItems      = filterNew(userId, allItems);
-  const filteredItems = applyKeywordFilter(userId, newItems);
+  const newItems      = await filterNew(userId, allItems);
+  const filteredItems = await applyKeywordFilter(userId, newItems);
   // Mark only items that actually passed the keyword filter as seen.
   // Items blocked by the filter are NOT marked — they'll retry if the filter changes.
-  markSeen(userId, filteredItems);
+  await markSeen(userId, filteredItems);
 
   if (!filteredItems.length) {
     return `🌅 *PORANNY RAPORT — ${today()}*\n\n_Brak nowych pozycji w feedach._`;
   }
 
   // Build context for LLM summary
-  const memFacts  = db.getMemory(userId);
+  const memFacts  = await db.getMemory(userId);
   const memBlock  = memFacts.length
     ? `Fakty o użytkowniku:\n${memFacts.map(f => `- ${f.fact}`).join('\n')}\n\n`
     : '';
@@ -152,20 +152,20 @@ async function buildMorning(userId) {
  * Evening fetches again but only shows items added since morning (new unseen ones).
  */
 async function buildEvening(userId) {
-  const feeds = db.getBriefingFeeds(userId);
+  const feeds = await db.getBriefingFeeds(userId);
   if (!feeds.length) return null;
 
   console.log(`[briefing] Evening for user ${userId} — fetching ${feeds.length} feed(s)…`);
   const allItems      = await rss.fetchFeeds(feeds);
-  const newItems      = filterNew(userId, allItems);
-  const filteredItems = applyKeywordFilter(userId, newItems);
-  markSeen(userId, filteredItems);
+  const newItems      = await filterNew(userId, allItems);
+  const filteredItems = await applyKeywordFilter(userId, newItems);
+  await markSeen(userId, filteredItems);
 
   if (!filteredItems.length) {
     return `🌙 *WIECZORNY RAPORT — ${today()}*\n\n_Brak nowych pozycji od porannego raportu._`;
   }
 
-  const memFacts = db.getMemory(userId);
+  const memFacts = await db.getMemory(userId);
   const memBlock = memFacts.length
     ? `Fakty o użytkowniku:\n${memFacts.map(f => `- ${f.fact}`).join('\n')}\n\n`
     : '';

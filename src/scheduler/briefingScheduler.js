@@ -75,9 +75,9 @@ function cancelOne(userId, type) {
 /**
  * Initialize briefing scheduler. Must be called once at startup with the bot instance.
  */
-function init(bot) {
+async function init(bot) {
   _bot = bot;
-  const configs = db.getAllBriefingConfigs();
+  const configs = await db.getAllBriefingConfigs();
   for (const cfg of configs) {
     if (!cfg.chatId) continue;
     if (cfg.morningEnabled) scheduleOne(cfg.userId, cfg.chatId, 'morning', cfg.morningTime);
@@ -89,8 +89,8 @@ function init(bot) {
 /**
  * Reload a single user's briefing tasks after config change.
  */
-function reload(userId, chatId) {
-  const cfg = db.getBriefingConfig(userId);
+async function reload(userId, chatId) {
+  const cfg = await db.getBriefingConfig(userId);
   if (cfg.morningEnabled) scheduleOne(userId, chatId, 'morning', cfg.morningTime);
   else cancelOne(userId, 'morning');
   if (cfg.eveningEnabled) scheduleOne(userId, chatId, 'evening', cfg.eveningTime);

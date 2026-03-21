@@ -77,9 +77,9 @@ async function sendLong(chatId, text) {
  * Initialize the scheduler. Must be called once at startup with the bot instance.
  * Restores all persisted schedules from the database.
  */
-function init(bot) {
+async function init(bot) {
   _bot = bot;
-  const all = db.getAllSchedules();
+  const all = await db.getAllSchedules();
   for (const schedule of all) {
     startTask(schedule);
   }
