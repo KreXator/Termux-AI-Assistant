@@ -10,7 +10,10 @@ const Parser = require('rss-parser');
 
 const parser = new Parser({
   timeout: 15000,
-  headers: { 'User-Agent': 'AI-Assistant-Bot/1.0' },
+  headers: {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+  },
   customFields: {
     item: [['media:content', 'media'], ['content:encoded', 'contentEncoded']],
   },
