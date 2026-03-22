@@ -16,6 +16,7 @@ const reminder         = require('../tools/reminder');
 const briefingCmd      = require('./briefingCmd');
 const bScheduler       = require('../scheduler/briefingScheduler');
 const nlRouter         = require('./nlRouter');
+const axios      = require('axios');
 const weather    = require('../tools/weather');
 const voice      = require('../tools/voice');
 const vision     = require('../tools/vision');
@@ -601,7 +602,10 @@ async function handleReminderDel(bot, msg, args) {
   await bot.sendMessage(chatId, `🗑 Reminder #${n} cancelled: _${text}_`, { parse_mode: 'Markdown' });
 }
 
-// ─── Export ──────────────────────────────────────────────────────────────────
+// ─── Export / Import ─────────────────────────────────────────────────────────
+
+// userId (string) → { data, chatId, msgId, timer }
+const pendingImports = new Map();
 
 async function handleExport(bot, msg) {
   const userId = msg.from.id;
@@ -618,39 +622,102 @@ async function handleExport(bot, msg) {
   ]);
   const myReminders = reminders.filter(r => r.userId === userId);
 
-  const now   = new Date().toISOString().replace('T', ' ').slice(0, 16);
-  const lines = [`AI Assistant — Data Export`, `Generated: ${now}`, `${'─'.repeat(50)}`];
+  const payload = {
+    version:  1,
+    exported: new Date().toISOString(),
+    memory:    memory.map(m => ({ fact: m.fact })),
+    notes:     notes.map(n => ({ note: n.note, ts: n.ts })),
+    todos:     todos.map(t => ({ task: t.task, done: t.done })),
+    reminders: myReminders.map(r => ({ text: r.text, fireAt: r.fireAt })),
+    schedules: schedules.map(s => ({ time: s.time, query: s.query })),
+    feeds:     feeds.map(f => ({ url: f.url, label: f.label, category: f.category })),
+  };
 
-  lines.push('', '## MEMORY', memory.length ? memory.map(m => `- ${m.fact}`).join('\n') : '(empty)');
+  const content  = Buffer.from(JSON.stringify(payload, null, 2), 'utf-8');
+  const filename = `klawik-export-${payload.exported.slice(0, 10)}.json`;
+  await bot.sendDocument(chatId, content, {
+    caption: `📦 Eksport danych — ${payload.exported.slice(0, 10)}\nAby zaimportować na innym urządzeniu, wyślij ten plik botowi.`,
+  }, { filename, contentType: 'application/json' });
+}
 
-  lines.push('', '## NOTES');
-  lines.push(notes.length
-    ? notes.map((n, i) => `[${i + 1}] ${n.note}${n.ts ? '  (' + n.ts.slice(0, 10) + ')' : ''}`).join('\n')
-    : '(empty)');
+/** Called when user sends a document — checks if it's a klawik-export JSON. */
+async function handleImportDocument(bot, msg) {
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+  const doc    = msg.document;
 
-  lines.push('', '## TODOS');
-  lines.push(todos.length
-    ? todos.map((t, i) => `[${i + 1}] [${t.done ? 'x' : ' '}] ${t.task}`).join('\n')
-    : '(empty)');
+  if (!doc?.file_name?.match(/klawik-export.*\.json$/i)) return;
 
-  lines.push('', '## REMINDERS (pending)');
-  lines.push(myReminders.length
-    ? myReminders.map(r => `- ${r.fireAt.slice(0, 16).replace('T', ' ')} — ${r.text}`).join('\n')
-    : '(empty)');
+  await bot.sendChatAction(chatId, 'typing');
 
-  lines.push('', '## SCHEDULED SEARCHES');
-  lines.push(schedules.length
-    ? schedules.map(s => `- ${s.time} — ${s.query}`).join('\n')
-    : '(empty)');
+  let data;
+  try {
+    const fileInfo = await bot.getFile(doc.file_id);
+    const fileUrl  = `https://api.telegram.org/file/bot${process.env.TELEGRAM_TOKEN}/${fileInfo.file_path}`;
+    const res      = await axios.get(fileUrl, { timeout: 10_000 });
+    data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+  } catch (err) {
+    return bot.sendMessage(chatId, `⚠️ Nie udało się wczytać pliku: ${err.message}`);
+  }
 
-  lines.push('', '## RSS FEEDS');
-  lines.push(feeds.length
-    ? feeds.map(f => `- [${f.category}] ${f.label}: ${f.url}`).join('\n')
-    : '(empty)');
+  if (!data || data.version !== 1) {
+    return bot.sendMessage(chatId, '⚠️ Nieprawidłowy format pliku eksportu (wymagana wersja 1).');
+  }
 
-  const content = Buffer.from(lines.join('\n'), 'utf-8');
-  const filename = `klawik-export-${now.slice(0, 10)}.txt`;
-  await bot.sendDocument(chatId, content, {}, { filename, contentType: 'text/plain' });
+  const counts = {
+    memory:    (data.memory    || []).length,
+    notes:     (data.notes     || []).length,
+    todos:     (data.todos     || []).length,
+    schedules: (data.schedules || []).length,
+    feeds:     (data.feeds     || []).length,
+  };
+
+  const summary = [
+    `📦 *Znaleziono dane z ${data.exported?.slice(0, 10) || '?'}:*`,
+    `- 🧠 Pamięć: ${counts.memory}`,
+    `- 📝 Notatki: ${counts.notes}`,
+    `- ✅ Zadania: ${counts.todos}`,
+    `- 🔍 Wyszukiwania: ${counts.schedules}`,
+    `- 📡 RSS feedy: ${counts.feeds}`,
+    '',
+    '_Dane zostaną *dołączone* do istniejących (nie zastąpią)._',
+  ].join('\n');
+
+  const sent = await bot.sendMessage(chatId, summary, {
+    parse_mode: 'Markdown',
+    reply_markup: {
+      inline_keyboard: [[
+        { text: '✅ Importuj',  callback_data: `import_confirm:${userId}` },
+        { text: '❌ Anuluj',    callback_data: `import_cancel:${userId}`  },
+      ]],
+    },
+  });
+
+  if (pendingImports.has(String(userId))) {
+    clearTimeout(pendingImports.get(String(userId)).timer);
+  }
+  const timer = setTimeout(() => pendingImports.delete(String(userId)), 90_000);
+  pendingImports.set(String(userId), { data, chatId, msgId: sent.message_id, timer });
+}
+
+async function executeImport(bot, userId, chatId) {
+  const pending = pendingImports.get(String(userId));
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  pendingImports.delete(String(userId));
+
+  const { data } = pending;
+  let imported = 0;
+
+  for (const m of (data.memory    || [])) { if (m.fact)              { await db.addMemory(userId, m.fact);                                    imported++; } }
+  for (const n of (data.notes     || [])) { if (n.note)              { await db.addNote(userId, n.note);                                      imported++; } }
+  for (const t of (data.todos     || [])) { if (t.task)              { await db.addTodo(userId, t.task);                                      imported++; } }
+  for (const s of (data.schedules || [])) { if (s.time && s.query)   { await db.addSchedule(userId, chatId, s.query, s.time);                 imported++; } }
+  for (const f of (data.feeds     || [])) { if (f.url  && f.label)   { await db.addBriefingFeed(userId, f.url, f.label, f.category||'general'); imported++; } }
+
+  await bot.sendMessage(chatId,
+    `✅ *Import zakończony* — dodano ${imported} elementów.`,
+    { parse_mode: 'Markdown' });
 }
 
 // ─── Weather ─────────────────────────────────────────────────────────────────
@@ -1288,6 +1355,8 @@ function register(bot) {
     if (m.voice) return handleVoice(bot, m);
     // Photo message
     if (m.photo) return handlePhoto(bot, m);
+    // Import document (klawik-export-*.json)
+    if (m.document) return handleImportDocument(bot, m);
     // Text commands skip
     if (!m.text || m.text.startsWith('/')) return;
     return handleMessage(bot, m);
@@ -1308,6 +1377,23 @@ function register(bot) {
 
     if (userId !== targetUserId) {
       bot.answerCallbackQuery(query.id, { text: 'To nie twoja akcja.' }).catch(() => {});
+      return;
+    }
+
+    // ── Import confirmation ────────────────────────────────────────────────
+    if (action === 'import_confirm' || action === 'import_cancel') {
+      bot.answerCallbackQuery(query.id, {
+        text: action === 'import_confirm' ? '✅ Importuję…' : '❌ Anulowano.',
+      }).catch(() => {});
+      bot.editMessageReplyMarkup({ inline_keyboard: [] },
+        { chat_id: query.message?.chat?.id, message_id: query.message?.message_id }
+      ).catch(() => {});
+      if (action === 'import_confirm') {
+        await executeImport(bot, Number(userId), query.message?.chat?.id);
+      } else {
+        pendingImports.delete(userId);
+        await bot.sendMessage(query.message?.chat?.id, '_Import anulowany._', { parse_mode: 'Markdown' });
+      }
       return;
     }
 
