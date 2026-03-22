@@ -2,8 +2,8 @@
  * openrouter.js — OpenRouter API client (OpenAI-compatible)
  *
  * Routing strategy (fire-and-forget):
- *   1. openrouter/free  — OR picks the best available free model automatically
- *   2. OR_MODEL_PREMIUM — cheap paid fallback (~$0.005/msg) when free tier is exhausted
+ *   1. google/gemma-3-*:free — specific free models with consistent Polish support
+ *   2. OR_MODEL_PREMIUM      — cheap paid fallback (~$0.005/msg) when free tier is exhausted
  *   3. Ollama           — local fallback (handled in client.js)
  *
  * Vision: google/gemma-3-12b-it:free (natively multimodal)
@@ -20,11 +20,11 @@ const MODEL_SMALL  = process.env.MODEL_SMALL  || 'qwen2.5:3b-instruct-q4_K_M';
 const MODEL_MEDIUM = process.env.MODEL_MEDIUM || 'qwen2.5:7b-instruct-q4_K_M';
 const MODEL_LARGE  = process.env.MODEL_LARGE  || 'qwen3:8b';
 
-// OR lets its free router pick the best available model automatically.
-// Individual model overrides are still possible via env vars.
-const OR_MODEL_SMALL   = process.env.OR_MODEL_SMALL   || 'openrouter/free';
-const OR_MODEL_MEDIUM  = process.env.OR_MODEL_MEDIUM  || 'openrouter/free';
-const OR_MODEL_LARGE   = process.env.OR_MODEL_LARGE   || 'openrouter/free';
+// Specific free models — consistent quality, good Polish support.
+// Override via env vars for custom routing.
+const OR_MODEL_SMALL   = process.env.OR_MODEL_SMALL   || 'google/gemma-3-4b-it:free';
+const OR_MODEL_MEDIUM  = process.env.OR_MODEL_MEDIUM  || 'google/gemma-3-12b-it:free';
+const OR_MODEL_LARGE   = process.env.OR_MODEL_LARGE   || 'google/gemma-3-27b-it:free';
 const OR_VISION_MODEL  = process.env.OR_VISION_MODEL  || 'google/gemma-3-12b-it:free';
 
 // Paid fallback — used automatically when free tier is exhausted (429).
