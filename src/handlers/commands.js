@@ -1015,7 +1015,8 @@ async function handleMessage(bot, msg, { forceChat = false } = {}) {
     }
     await bot.sendMessage(chatId, '🔍 Searching the web first...');
     const results = await search.webSearch(text);
-    enriched = `Search results:\n${results}\n\nQuestion: ${text}`;
+    const lang    = routeResult.lang === 'en' ? 'English' : 'Polish';
+    enriched = `Search results:\n${results}\n\nAnswer in ${lang}: ${text}`;
   }
 
   const manualModel  = cfg.manualModel ? cfg.model : null;
