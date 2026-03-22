@@ -87,10 +87,14 @@ async function init() {
         keyword TEXT NOT NULL,
         PRIMARY KEY (user_id, keyword)
       )` },
-    { sql: `CREATE TABLE IF NOT EXISTS instance_lock (
-        instance_id TEXT PRIMARY KEY,
+    // Recreate lock table with single-slot design (drop old multi-instance schema if exists)
+    { sql: `DROP TABLE IF EXISTS instance_lock` },
+    { sql: `CREATE TABLE instance_lock (
+        lock_slot   INTEGER NOT NULL DEFAULT 1 CHECK(lock_slot = 1),
+        instance_id TEXT NOT NULL,
         acquired_at TEXT NOT NULL,
-        heartbeat   TEXT NOT NULL
+        heartbeat   TEXT NOT NULL,
+        PRIMARY KEY (lock_slot)
       )` },
   ], 'write');
   console.log('[db] Schema ready.');

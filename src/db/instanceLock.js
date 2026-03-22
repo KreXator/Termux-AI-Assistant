@@ -20,27 +20,27 @@ let _heartbeatTimer = null;
  * Returns true if this instance is now active, false if another instance holds it.
  */
 async function acquire(instanceId) {
-  const now     = new Date().toISOString();
-  const expiry  = new Date(Date.now() - EXPIRY_MS).toISOString();
+  const now    = new Date().toISOString();
+  const expiry = new Date(Date.now() - EXPIRY_MS).toISOString();
 
-  // Delete expired lock from any holder
+  // Remove expired lock (only 1 row ever exists — lock_slot = 1)
   await turso.execute({
     sql:  'DELETE FROM instance_lock WHERE heartbeat < ?',
     args: [expiry],
   });
 
-  // Try to insert our lock
+  // Try to claim the single lock slot
   try {
     await turso.execute({
-      sql:  'INSERT INTO instance_lock (instance_id, acquired_at, heartbeat) VALUES (?, ?, ?)',
+      sql:  'INSERT INTO instance_lock (lock_slot, instance_id, acquired_at, heartbeat) VALUES (1, ?, ?, ?)',
       args: [instanceId, now, now],
     });
     console.log(`[lock] Acquired by ${instanceId}`);
     return true;
   } catch {
-    // Another instance holds the lock
+    // Slot taken by another instance with a fresh heartbeat
     const r = await turso.execute(
-      'SELECT instance_id, heartbeat FROM instance_lock LIMIT 1'
+      'SELECT instance_id, heartbeat FROM instance_lock WHERE lock_slot = 1'
     );
     if (r.rows.length) {
       console.log(`[lock] Held by ${r.rows[0][0]}, heartbeat ${r.rows[0][1]}`);
@@ -55,7 +55,7 @@ async function acquire(instanceId) {
 async function release(instanceId) {
   if (_heartbeatTimer) { clearInterval(_heartbeatTimer); _heartbeatTimer = null; }
   await turso.execute({
-    sql:  'DELETE FROM instance_lock WHERE instance_id = ?',
+    sql:  'DELETE FROM instance_lock WHERE lock_slot = 1 AND instance_id = ?',
     args: [instanceId],
   });
   console.log(`[lock] Released by ${instanceId}`);
@@ -68,7 +68,7 @@ function startHeartbeat(instanceId) {
   _heartbeatTimer = setInterval(async () => {
     try {
       await turso.execute({
-        sql:  'UPDATE instance_lock SET heartbeat = ? WHERE instance_id = ?',
+        sql:  'UPDATE instance_lock SET heartbeat = ? WHERE lock_slot = 1 AND instance_id = ?',
         args: [new Date().toISOString(), instanceId],
       });
     } catch (err) {
