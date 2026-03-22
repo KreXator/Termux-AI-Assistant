@@ -172,6 +172,57 @@ async function chat({ userId, userMessage, rawMessage, model, persona = 'default
   return reply;
 }
 
+// ─── Streaming chat call ──────────────────────────────────────────────────────
+
+/**
+ * Stream a chat response. Same as chat() but calls onChunk as tokens arrive.
+ * Falls back to non-streaming on error (e.g. free OR model rate-limit).
+ *
+ * @param {object} opts  — same fields as chat(), plus:
+ * @param {Function} opts.onChunk  — (delta: string, accumulated: string) => void
+ * @returns {Promise<string>}      — full reply
+ */
+async function chatStream({ userId, userMessage, rawMessage, model, persona = 'default', customInstruction = null, onChunk }) {
+  await db.appendMessage(userId, 'user', rawMessage || userMessage);
+
+  const history    = await pruneHistory(userId);
+  const memFacts   = await db.getMemory(userId);
+  const memBlock   = memFacts.length
+    ? `\n\nKnown facts about the user:\n${memFacts.map(f => `- ${f.fact}`).join('\n')}`
+    : '';
+  const systemContent = (customInstruction || getSystemPrompt(persona)) + memBlock;
+  const messages = [
+    { role: 'system', content: systemContent },
+    ...history.map(m => ({ role: m.role, content: m.content })),
+  ];
+
+  let reply;
+  const maxTokens = MAX_TOKENS[model] || 1200;
+
+  if (process.env.OPENROUTER_API_KEY) {
+    const orModel = openrouter.mapModel(model);
+    try {
+      reply = await openrouter.completeStream(orModel, messages, maxTokens, onChunk);
+      console.log(`[client/stream] provider=openrouter model=${orModel}`);
+    } catch (err) {
+      // Free model rate-limited or stream failed — fall back to non-streaming
+      console.warn(`[client/stream] stream failed (${err.response?.status || err.message}), falling back to chat()`);
+      reply = await tryOpenRouterWithCascade(model, messages);
+    }
+  } else {
+    try {
+      reply = await ollama.completeRawStream(model, messages, onChunk);
+      console.log('[client/stream] provider=ollama');
+    } catch (err) {
+      console.warn(`[client/stream] ollama stream failed: ${err.message}, retrying non-streaming`);
+      reply = await ollama.completeRaw(model, messages);
+    }
+  }
+
+  await db.appendMessage(userId, 'assistant', reply);
+  return reply;
+}
+
 // ─── Model listing ────────────────────────────────────────────────────────────
 
 async function listModels() {
@@ -205,6 +256,7 @@ async function listModels() {
 
 module.exports = {
   chat,
+  chatStream,
   listModels,
   resolveDisplayModel,
   getSystemPrompt,

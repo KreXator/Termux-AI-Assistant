@@ -56,6 +56,8 @@ Supported bot_command intents and params:
 - schedule_add          {"time": "HH:MM", "query": "search query string"}
 - remind                {"when": "30min|2h|45s|HH:MM", "text": "reminder message"}
 - remember              {"fact": "fact about the user in third person, Polish"}
+- summarize_url         {"url": "https://..."}
+- daily_digest          {}
 
 Time normalization rules:
 - "za 30 minut" → "30min"
@@ -63,6 +65,15 @@ Time normalization rules:
 - "za pół godziny" → "30min"
 - "o 7:30" → "07:30"
 - Always zero-pad hours: "7:30" → "07:30"
+
+CRITICAL — use "bot_command" / summarize_url for:
+- Any message containing a URL (http/https) with words like "podsumuj", "streszcz", "co to jest", "przeczytaj", "sum", "summarize", "tldr" — or a bare URL with no other instruction
+- Example: "podsumuj https://example.com" → {"type":"bot_command","intent":"summarize_url","lang":"pl","params":{"url":"https://example.com"}}
+- Example: "https://example.com" → {"type":"bot_command","intent":"summarize_url","lang":"pl","params":{"url":"https://example.com"}}
+
+CRITICAL — use "bot_command" / daily_digest for:
+- "co mam dziś", "plan na dziś", "mój dzień", "standup", "co dziś", "/dzisiaj"
+- Example: "co mam dziś do zrobienia?" → {"type":"bot_command","intent":"daily_digest","lang":"pl","params":{}}
 
 CRITICAL — use "chat" (not "bot_command") for:
 - Questions about how things work: "jak działa RSS?", "co to jest briefing?"
@@ -105,6 +116,10 @@ Examples:
 "remind me in 2 hours to send the report" → {"type":"bot_command","intent":"remind","lang":"en","params":{"when":"2h","text":"send the report"}}
 "zapamiętaj że szukam pracy zdalnej" → {"type":"bot_command","intent":"remember","lang":"pl","params":{"fact":"Szuka pracy zdalnej"}}
 "remember I prefer concise answers" → {"type":"bot_command","intent":"remember","lang":"en","params":{"fact":"Prefers concise answers"}}
+"podsumuj https://example.com/article" → {"type":"bot_command","intent":"summarize_url","lang":"pl","params":{"url":"https://example.com/article"}}
+"https://news.ycombinator.com" → {"type":"bot_command","intent":"summarize_url","lang":"pl","params":{"url":"https://news.ycombinator.com"}}
+"co mam dziś do zrobienia?" → {"type":"bot_command","intent":"daily_digest","lang":"pl","params":{}}
+"plan na dziś" → {"type":"bot_command","intent":"daily_digest","lang":"pl","params":{}}
 "sprawdź pogodę w Warszawie" → {"type":"web_search","intent":null,"lang":"pl","params":{}}
 "jaka jest pogoda dzisiaj?" → {"type":"web_search","intent":null,"lang":"pl","params":{}}
 "kurs bitcoina" → {"type":"web_search","intent":null,"lang":"pl","params":{}}
@@ -143,6 +158,7 @@ const KNOWN_INTENTS = new Set([
   'briefing_time_morning', 'briefing_time_evening',
   'briefing_keywords_add', 'briefing_keywords_remove',
   'briefing_run_now', 'schedule_add', 'remind', 'remember',
+  'summarize_url', 'daily_digest',
 ]);
 
 function parse(raw) {
@@ -177,6 +193,13 @@ function parse(raw) {
 // Handles unambiguous patterns that free models misclassify.
 // Returns a route object on match, null to proceed to LLM.
 
+// Bare or accompanied URL → summarize
+const URL_PRECHECK_RE = /https?:\/\/[^\s<>"']+/i;
+const SUMMARIZE_TRIGGER_RE = /\b(podsumuj|streszcz|streścij|summarize|tldr|przeczytaj|co tam|co pisze)\b/i;
+
+// "co mam dziś", "plan na dziś", "standup"
+const DAILY_DIGEST_RE = /\b(co\s+mam\s+dzi[śs]|plan\s+na\s+dzi[śs]|m[oó]j\s+dzie[nń]|standup|co\s+dzi[śs]\b)/i;
+
 const LIST_PRECHECK = [
   { re: /\b(moje\s+)?notatki\b|\blista\s+notatek\b|\bpokaż\s+notatki\b/i,                intent: 'list_notes'     },
   { re: /\b(moje\s+)?zadania\b|\blista\s+zadań\b|\bpokaż\s+zadania\b|\btodos\b/i,        intent: 'list_todos'     },
@@ -196,6 +219,17 @@ const SCHEDULE_ADD_RE = /\bzaplanuj\b.{0,100}\bo\s+(\d{1,2}:\d{2})\b/i;
 
 function precheck(text) {
   if (CHAT_OVERRIDE.test(text)) return { type: 'chat', intent: null, lang: 'pl', params: {} };
+
+  // URL in message → summarize (bare URL or with trigger word)
+  const urlMatch = URL_PRECHECK_RE.exec(text);
+  if (urlMatch && (SUMMARIZE_TRIGGER_RE.test(text) || text.trim().match(/^https?:\/\//i))) {
+    return { type: 'bot_command', intent: 'summarize_url', lang: 'pl', params: { url: urlMatch[0] } };
+  }
+
+  // Daily digest
+  if (DAILY_DIGEST_RE.test(text)) {
+    return { type: 'bot_command', intent: 'daily_digest', lang: 'pl', params: {} };
+  }
 
   // schedule_add: "zaplanuj ... o HH:MM" — extract time and use rest as query
   const schedMatch = SCHEDULE_ADD_RE.exec(text);

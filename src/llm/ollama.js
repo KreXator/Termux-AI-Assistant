@@ -122,6 +122,51 @@ async function completeRaw(model, messages) {
 }
 
 /**
+ * Raw streaming completion — calls onChunk(delta, accumulated) per chunk.
+ * Returns full reply string when done.
+ * @param {string} model
+ * @param {Array}  messages
+ * @param {Function} onChunk
+ * @returns {Promise<string>}
+ */
+async function completeRawStream(model, messages, onChunk) {
+  console.log(`[ollama/stream] model=${model}, messages=${messages.length}`);
+  const res = await axios.post(`${BASE_URL}/api/chat`, {
+    model, messages, stream: true,
+  }, { timeout: 180_000, responseType: 'stream' });
+
+  return new Promise((resolve, reject) => {
+    let full   = '';
+    let buffer = '';
+
+    res.data.on('data', chunk => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line);
+          const delta  = parsed.message?.content;
+          if (delta) {
+            full += delta;
+            onChunk(delta, full);
+          }
+        } catch { /* skip */ }
+      }
+    });
+
+    res.data.on('end', () => {
+      const cleaned = full.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+      resolve(cleaned);
+    });
+
+    res.data.on('error', reject);
+  });
+}
+
+/**
  * List available models from local Ollama.
  */
 async function listModels() {
@@ -146,4 +191,4 @@ async function isOllamaRunning() {
   }
 }
 
-module.exports = { chat, completeRaw, listModels, isOllamaRunning, getSystemPrompt };
+module.exports = { chat, completeRaw, completeRawStream, listModels, isOllamaRunning, getSystemPrompt };

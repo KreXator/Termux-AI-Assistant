@@ -16,9 +16,10 @@ const reminder         = require('../tools/reminder');
 const briefingCmd      = require('./briefingCmd');
 const bScheduler       = require('../scheduler/briefingScheduler');
 const nlRouter         = require('./nlRouter');
-const weather   = require('../tools/weather');
-const voice     = require('../tools/voice');
-const vision    = require('../tools/vision');
+const weather    = require('../tools/weather');
+const voice      = require('../tools/voice');
+const vision     = require('../tools/vision');
+const summarizer = require('../tools/summarizer');
 
 const ALLOWED_IDS = (process.env.ALLOWED_USER_IDS || '')
   .split(',').map(s => s.trim()).filter(Boolean).map(Number);
@@ -33,6 +34,7 @@ const READ_ONLY_INTENTS = new Set([
   'list_todos', 'list_notes', 'list_reminders',
   'list_memory', 'list_schedules', 'list_feeds',
   'briefing_list_feeds', 'schedule_list',
+  'summarize_url', 'daily_digest',
 ]);
 
 /** Escape Telegram Markdown V1 special chars in user-supplied text. */
@@ -924,6 +926,67 @@ async function executeIntent(bot, msg, intent) {
       await executeIntent(bot, msg, { intent: 'briefing_list_feeds', lang, params: {} });
       return true;
 
+    case 'summarize_url': {
+      const { url } = params;
+      if (!url) {
+        await bot.sendMessage(chatId, t(lang, '⚠️ No URL found.', '⚠️ Nie znalazłem adresu URL.'));
+        return true;
+      }
+      await bot.sendChatAction(chatId, 'typing');
+      await bot.sendMessage(chatId, t(lang, '📄 Fetching and summarizing…', '📄 Pobieram i strezczam…'));
+      const summary = await summarizer.summarizeUrl(url, lang);
+      await sendLong(bot, chatId, summary);
+      return true;
+    }
+
+    case 'daily_digest': {
+      await bot.sendChatAction(chatId, 'typing');
+      const [todos, schedules, reminders] = await Promise.all([
+        db.getTodos(userId),
+        db.getSchedules(userId),
+        db.loadReminders(),
+      ]);
+
+      // Filter reminders for this user, firing today
+      const todayStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+      const myReminders = reminders.filter(r =>
+        r.userId === userId && r.fireAt.startsWith(todayStr)
+      );
+
+      const lines = [`*📅 ${t(lang, 'Your day at a glance', 'Twój dzień w skrócie')}*`, ''];
+
+      const pendingTodos = todos.filter(td => !td.done);
+      if (pendingTodos.length) {
+        lines.push(`*✅ ${t(lang, 'Todos', 'Zadania')} (${pendingTodos.length}):*`);
+        pendingTodos.forEach((td, i) => lines.push(`${i + 1}. ${esc(td.task)}`));
+        lines.push('');
+      } else {
+        lines.push(`✅ ${t(lang, 'No pending todos.', 'Brak zadań.')}`);
+        lines.push('');
+      }
+
+      if (myReminders.length) {
+        lines.push(`*⏰ ${t(lang, 'Reminders today', 'Przypomnienia dziś')} (${myReminders.length}):*`);
+        myReminders.forEach(r => {
+          const time = r.fireAt.slice(11, 16); // HH:MM
+          lines.push(`- ${time} — ${esc(r.text)}`);
+        });
+        lines.push('');
+      }
+
+      if (schedules.length) {
+        lines.push(`*🔍 ${t(lang, 'Scheduled searches', 'Zaplanowane wyszukiwania')} (${schedules.length}):*`);
+        schedules.forEach(s => lines.push(`- 🕐 *${s.time}* — _${esc(s.query)}_`));
+      }
+
+      if (!pendingTodos.length && !myReminders.length && !schedules.length) {
+        lines.push(t(lang, '_Nothing planned for today. Enjoy the free time!_', '_Nic zaplanowanego na dziś. Ciesz się wolnym czasem!_'));
+      }
+
+      await bot.sendMessage(chatId, lines.join('\n'), { parse_mode: 'Markdown' });
+      return true;
+    }
+
     default:
       return false;
   }
@@ -1024,33 +1087,50 @@ async function handleMessage(bot, msg, { forceChat = false } = {}) {
   const label        = router.modelLabel(model);
   const displayModel = llm.resolveDisplayModel(model);
 
-  let typingInterval;
-  let loadingMsg = null;
+  // ── Streaming chat with debounced Telegram edits ──────────────────────────
+  // Sends a placeholder message, then edits it as tokens arrive (every 800ms).
+  // On completion, replaces the placeholder with the full formatted reply.
+  const EDIT_INTERVAL_MS = 800;
+  const TG_MAX_LEN       = 4000; // safe Telegram message length
+
+  let streamMsg    = null;
+  let lastEditAt   = 0;
+  let pendingEdit  = false;
+
   try {
-    if (model !== router.MODEL_SMALL) {
-      loadingMsg = await bot.sendMessage(chatId, `⏳ *${label} — ${displayModel}...*`);
-    }
+    streamMsg = await bot.sendMessage(chatId, `⏳ _${label}…_`, { parse_mode: 'Markdown' });
+    await bot.sendChatAction(chatId, 'typing');
 
-    typingInterval = setInterval(() => bot.sendChatAction(chatId, 'typing'), 5000);
+    const onChunk = async (_delta, accumulated) => {
+      const now = Date.now();
+      if (pendingEdit || now - lastEditAt < EDIT_INTERVAL_MS) return;
+      pendingEdit = true;
+      lastEditAt  = now;
+      try {
+        const preview = accumulated.slice(0, TG_MAX_LEN) + (accumulated.length > TG_MAX_LEN ? '…' : ' ▌');
+        await bot.editMessageText(preview, { chat_id: chatId, message_id: streamMsg.message_id });
+      } catch { /* ignore rate-limit or unchanged-text errors */ }
+      pendingEdit = false;
+    };
 
-    const reply = await llm.chat({
+    const reply = await llm.chatStream({
       userId,
       userMessage:       enriched,
-      rawMessage:        text,    // store original in history, not the injected web context
+      rawMessage:        text,
       model,
       persona:           cfg.persona,
       customInstruction: cfg.customInstruction || null,
+      onChunk,
     });
 
-    clearInterval(typingInterval);
-    if (loadingMsg) {
-      await bot.deleteMessage(chatId, loadingMsg.message_id).catch(() => {});
-    }
-
+    // Delete streaming placeholder, then send final formatted reply
+    await bot.deleteMessage(chatId, streamMsg.message_id).catch(() => {});
     const prefixed = model !== router.MODEL_SMALL ? `${label}\n\n${reply}` : reply;
     await sendLong(bot, chatId, prefixed);
   } catch (err) {
-    clearInterval(typingInterval);
+    if (streamMsg) {
+      await bot.deleteMessage(chatId, streamMsg.message_id).catch(() => {});
+    }
 
     let errMsg = `❌ Error: ${err.message}`;
     if (err.code === 'ECONNREFUSED')
@@ -1131,6 +1211,15 @@ function register(bot) {
     briefingCmd.handle(bot, m, match[1]?.trim().split(/\s+/) || [])));
 
   bot.onText(/^\/update$/, guard(m => handleUpdate(bot, m)));
+
+  bot.onText(/^\/dzisiaj$/, guard(m =>
+    executeIntent(bot, m, { intent: 'daily_digest', lang: 'pl', params: {} })));
+
+  bot.onText(/^\/sum(?:\s+(.+))?$/, guard((m, match) => {
+    const url = match[1]?.trim();
+    if (!url) return bot.sendMessage(m.chat.id, 'Użycie: `/sum <url>`', { parse_mode: 'Markdown' });
+    return executeIntent(bot, m, { intent: 'summarize_url', lang: 'pl', params: { url } });
+  }));
 
   bot.on('message', guard(m => {
     // Voice message

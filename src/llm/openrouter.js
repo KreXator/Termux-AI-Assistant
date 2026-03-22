@@ -124,6 +124,67 @@ async function complete(localModel, messages, maxTokens) {
   return content.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
 }
 
+// ─── Streaming completion ─────────────────────────────────────────────────────
+
+/**
+ * Stream a chat completion from OpenRouter.
+ * Calls onChunk(delta, accumulated) for every text chunk received.
+ * Returns the full reply string when done.
+ *
+ * @param {string} orModel       — already-resolved OpenRouter model ID
+ * @param {Array}  messages
+ * @param {number} [maxTokens]
+ * @param {Function} onChunk     — (delta: string, full: string) => void
+ * @returns {Promise<string>}
+ */
+async function completeStream(orModel, messages, maxTokens, onChunk) {
+  if (!OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY not set');
+
+  const normalized = needsSystemWorkaround(orModel) ? injectSystemAsUser(messages) : messages;
+  console.log(`[openrouter/stream] model=${orModel}, messages=${normalized.length}`);
+
+  const body = { model: orModel, messages: normalized, stream: true };
+  if (maxTokens) body.max_tokens = maxTokens;
+
+  const res = await axios.post(`${BASE_URL}/chat/completions`, body, {
+    timeout: 180_000,
+    headers: orHeaders(),
+    responseType: 'stream',
+  });
+
+  return new Promise((resolve, reject) => {
+    let full   = '';
+    let buffer = '';
+
+    res.data.on('data', chunk => {
+      buffer += chunk.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep last incomplete line
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const json = line.slice(6).trim();
+        if (json === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(json);
+          const delta  = parsed.choices?.[0]?.delta?.content;
+          if (delta) {
+            full += delta;
+            onChunk(delta, full);
+          }
+        } catch { /* skip malformed SSE lines */ }
+      }
+    });
+
+    res.data.on('end', () => {
+      const cleaned = full.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+      resolve(cleaned);
+    });
+
+    res.data.on('error', reject);
+  });
+}
+
 // ─── Vision completion ────────────────────────────────────────────────────────
 
 /**
@@ -177,6 +238,7 @@ async function isReachable() {
 
 module.exports = {
   complete,
+  completeStream,
   completeVision,
   isReachable,
   mapModel,
