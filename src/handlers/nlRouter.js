@@ -200,6 +200,9 @@ const SUMMARIZE_TRIGGER_RE = /\b(podsumuj|streszcz|streścij|summarize|tldr|prze
 // "co mam dziś", "plan na dziś", "standup"
 const DAILY_DIGEST_RE = /\b(co\s+mam\s+dzi[śs]|plan\s+na\s+dzi[śs]|m[oó]j\s+dzie[nń]|standup|co\s+dzi[śs]\b)/i;
 
+// Navigation queries → web_search (LLM hallucinates local street names)
+const NAV_SEARCH_RE = /\b(jak\s+(?:dojechać|dojadę|dotrzeć|dojść)|drog[ęa]\s+powrotn|trasa?\s+rowerow|trasa?\s+(?:piesz|samochodow)|(?:wymyśl|zaproponuj|pokaż|podaj)\s+.{0,30}(?:trasa?|droga?|tras[ęa])\s+(?:rowerow|do\s+[A-ZŁŚÓŹ]))/i;
+
 const LIST_PRECHECK = [
   { re: /\b(moje\s+)?notatki\b|\blista\s+notatek\b|\bpokaż\s+notatki\b/i,                intent: 'list_notes'     },
   { re: /\b(moje\s+)?zadania\b|\blista\s+zadań\b|\bpokaż\s+zadania\b|\btodos\b/i,        intent: 'list_todos'     },
@@ -229,6 +232,11 @@ function precheck(text) {
   // Daily digest
   if (DAILY_DIGEST_RE.test(text)) {
     return { type: 'bot_command', intent: 'daily_digest', lang: 'pl', params: {} };
+  }
+
+  // Navigation queries → web_search (LLM doesn't know local streets)
+  if (NAV_SEARCH_RE.test(text)) {
+    return { type: 'web_search', intent: null, lang: 'pl', params: {} };
   }
 
   // schedule_add: "zaplanuj ... o HH:MM" — extract time and use rest as query

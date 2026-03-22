@@ -1122,7 +1122,9 @@ async function handleMessage(bot, msg, { forceChat = false } = {}) {
 
     clearInterval(editTimer);
     await bot.deleteMessage(chatId, streamMsg.message_id).catch(() => {});
-    const prefixed = model !== router.MODEL_SMALL ? `${label}\n\n${reply}` : reply;
+    // Strip stray CJK characters occasionally injected by some LLMs (e.g. Mistral-small)
+    const clean   = reply.replace(/[\u3000-\u9fff\uff00-\uffef\u3040-\u30ff]/g, '');
+    const prefixed = model !== router.MODEL_SMALL ? `${label}\n\n${clean}` : clean;
     await sendLong(bot, chatId, prefixed);
   } catch (err) {
     clearInterval(editTimer);
