@@ -127,15 +127,16 @@ async function tryOpenRouterWithCascade(model, messages) {
  *
  * @param {object} opts
  * @param {number}      opts.userId
- * @param {string}      opts.userMessage
+ * @param {string}      opts.userMessage        — message sent to the model (may include injected context)
+ * @param {string}      [opts.rawMessage]       — what to store in history (defaults to userMessage)
  * @param {string}      opts.model             — local tier model name from router.js
  * @param {string}      [opts.persona]
  * @param {string|null} [opts.customInstruction]
  * @returns {Promise<string>}
  */
-async function chat({ userId, userMessage, model, persona = 'default', customInstruction = null }) {
-  // 1. Persist user message
-  await db.appendMessage(userId, 'user', userMessage);
+async function chat({ userId, userMessage, rawMessage, model, persona = 'default', customInstruction = null }) {
+  // 1. Persist user message — store original text, not injected web context
+  await db.appendMessage(userId, 'user', rawMessage || userMessage);
 
   // 2. Build history + memory + system prompt
   const history   = await pruneHistory(userId);

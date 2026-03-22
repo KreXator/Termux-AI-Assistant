@@ -16,8 +16,10 @@ const MODEL_LARGE  = process.env.MODEL_LARGE  || 'qwen3:8b';
 // ── Coding patterns → always LARGE ────────────────────────────────────────────
 const CODING_PATTERNS = [
   /\bkod\b/i, /\bcode\b/i, /\bscript\b/i, /\bskrypt\b/i,
-  /\bnapisa[ćc]\b.*\b(funkcj|kod|skrypt|program|class|function)\b/i,
-  /\bwrite\b.*\b(function|class|program|script)\b/i,
+  /\b(napisa[ćc]|napisz)\b.*\b(funkcj|test|kod|skrypt|program|class|function)\b/i,
+  /\bwrite\b.*\b(function|class|program|script|test)\b/i,
+  /\btest\s+(jednostkow|integracyjn|e2e)\b/i,  // unit/integration/e2e tests in Polish
+  /\bunit\s+test\b/i,
   /\brefactor\b/i, /\bdebug\b/i, /\bSQL\b/i,
   /\bregex\b/i, /\bapi\b.*\bdesign\b/i,
   /\bimplementu[jj]\b/i, /\bimplement\b/i,
@@ -101,10 +103,20 @@ function routeModel(message, override = null) {
 
 /**
  * Returns a human-readable label for the model tier.
+ * Handles both local tier names (Ollama) and full OpenRouter model IDs.
  */
 function modelLabel(model) {
   if (model === MODEL_LARGE)  return '🧠 high';
   if (model === MODEL_MEDIUM) return '⚡ medium';
+  if (model === MODEL_SMALL)  return '💬 fast';
+  // Full OpenRouter model IDs (contain '/')
+  if (model && model.includes('/')) {
+    if (/gemini-2\.5|claude-opus|gpt-4o(?!-mini)/i.test(model)) return '💰 premium';
+    if (/devstral|deepseek-coder/i.test(model)) return '🛠️ coder';
+    if (/gpt-4\.1-mini|gpt-4o-mini|mistral-small/i.test(model)) return '🧠 high';
+    if (/gemma|llama.*(?:8b|7b)|phi/i.test(model)) return '💬 fast';
+    return '⚡ or';  // generic paid OR model
+  }
   return '💬 fast';
 }
 

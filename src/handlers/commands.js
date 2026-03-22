@@ -1033,6 +1033,7 @@ async function handleMessage(bot, msg) {
     const reply = await llm.chat({
       userId,
       userMessage:       enriched,
+      rawMessage:        text,    // store original in history, not the injected web context
       model,
       persona:           cfg.persona,
       customInstruction: cfg.customInstruction || null,
