@@ -72,7 +72,7 @@ async function summarizeUrl(url, lang = 'pl') {
 
   try {
     if (process.env.OPENROUTER_API_KEY) {
-      return await openrouter.complete(openrouter.OR_MODEL_SMALL, messages, 300);
+      return await openrouter.complete(openrouter.OR_MODEL_MEDIUM, messages, 300);
     }
     return await ollama.completeRaw(process.env.MODEL_MEDIUM || 'qwen2.5:7b-instruct-q4_K_M', messages);
   } catch (err) {

@@ -1087,31 +1087,28 @@ async function handleMessage(bot, msg, { forceChat = false } = {}) {
   const label        = router.modelLabel(model);
   const displayModel = llm.resolveDisplayModel(model);
 
-  // ── Streaming chat with debounced Telegram edits ──────────────────────────
-  // Sends a placeholder message, then edits it as tokens arrive (every 800ms).
-  // On completion, replaces the placeholder with the full formatted reply.
-  const EDIT_INTERVAL_MS = 800;
-  const TG_MAX_LEN       = 4000; // safe Telegram message length
+  // ── Streaming chat with timer-based Telegram edits ───────────────────────
+  // onChunk is purely synchronous (just updates a variable).
+  // A setInterval fires every 800ms and edits the placeholder independently.
+  // This avoids concurrent async calls and Telegram rate-limit issues.
+  const TG_MAX_LEN = 4000;
 
-  let streamMsg    = null;
-  let lastEditAt   = 0;
-  let pendingEdit  = false;
+  let streamMsg   = null;
+  let editTimer   = null;
+  let accumulated = '';
+  let lastSent    = '';
 
   try {
     streamMsg = await bot.sendMessage(chatId, `⏳ _${label}…_`, { parse_mode: 'Markdown' });
-    await bot.sendChatAction(chatId, 'typing');
 
-    const onChunk = async (_delta, accumulated) => {
-      const now = Date.now();
-      if (pendingEdit || now - lastEditAt < EDIT_INTERVAL_MS) return;
-      pendingEdit = true;
-      lastEditAt  = now;
+    editTimer = setInterval(async () => {
+      if (!accumulated || accumulated === lastSent) return;
+      lastSent = accumulated;
+      const preview = accumulated.slice(0, TG_MAX_LEN) + (accumulated.length > TG_MAX_LEN ? '…' : ' ▌');
       try {
-        const preview = accumulated.slice(0, TG_MAX_LEN) + (accumulated.length > TG_MAX_LEN ? '…' : ' ▌');
         await bot.editMessageText(preview, { chat_id: chatId, message_id: streamMsg.message_id });
-      } catch { /* ignore rate-limit or unchanged-text errors */ }
-      pendingEdit = false;
-    };
+      } catch { /* ignore rate-limit / unchanged-text errors */ }
+    }, 800);
 
     const reply = await llm.chatStream({
       userId,
@@ -1120,14 +1117,15 @@ async function handleMessage(bot, msg, { forceChat = false } = {}) {
       model,
       persona:           cfg.persona,
       customInstruction: cfg.customInstruction || null,
-      onChunk,
+      onChunk: (_delta, full) => { accumulated = full; }, // sync — just update state
     });
 
-    // Delete streaming placeholder, then send final formatted reply
+    clearInterval(editTimer);
     await bot.deleteMessage(chatId, streamMsg.message_id).catch(() => {});
     const prefixed = model !== router.MODEL_SMALL ? `${label}\n\n${reply}` : reply;
     await sendLong(bot, chatId, prefixed);
   } catch (err) {
+    clearInterval(editTimer);
     if (streamMsg) {
       await bot.deleteMessage(chatId, streamMsg.message_id).catch(() => {});
     }
