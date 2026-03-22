@@ -172,6 +172,30 @@ function parse(raw) {
   }
 }
 
+// ─── Fast pre-check (deterministic, no LLM) ──────────────────────────────────
+// Handles unambiguous patterns that free models misclassify.
+// Returns a route object on match, null to proceed to LLM.
+
+const LIST_PRECHECK = [
+  { re: /\b(moje\s+)?notatki\b|\blista\s+notatek\b|\bpokaż\s+notatki\b/i,                intent: 'list_notes'     },
+  { re: /\b(moje\s+)?zadania\b|\blista\s+zadań\b|\bpokaż\s+zadania\b|\btodos\b/i,        intent: 'list_todos'     },
+  { re: /\b(moje\s+)?przypomnienia\b|\blista\s+przypomnień\b|\bpokaż\s+przypomnienia\b/i, intent: 'list_reminders' },
+  { re: /\b(moja\s+)?pamięć\b|\bzapamiętane\b|\bpokaż\s+pamięć\b/i,                     intent: 'list_memory'    },
+  { re: /\bzaplanowane\s+wyszukiwania\b|\bpokaż\s+(harmonogram|schedule)\b/i,             intent: 'list_schedules' },
+  { re: /\b(moje\s+)?feedy\b|\blista\s+feedów\b|\bpokaż\s+(feedy|feed[sy]?\s+rss)\b/i,   intent: 'list_feeds'     },
+];
+
+// "zaplanuj X" where X is NOT a scheduled-search — force to chat
+const CHAT_OVERRIDE = /\bzaplanuj\s+(trasę|wyjazd|dzień|projekt|menu|wakacje|podróż|weekend|wycieczkę|aktywność|czas|tydzień)\b/i;
+
+function precheck(text) {
+  if (CHAT_OVERRIDE.test(text)) return { type: 'chat', intent: null, lang: 'pl', params: {} };
+  for (const { re, intent } of LIST_PRECHECK) {
+    if (re.test(text)) return { type: 'bot_command', intent, lang: 'pl', params: {} };
+  }
+  return null;
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -181,6 +205,9 @@ function parse(raw) {
  * @returns {Promise<{type: 'bot_command'|'web_search'|'chat', intent: string|null, lang: string, params: object}>}
  */
 async function route(text) {
+  const fast = precheck(text);
+  if (fast) return fast;
+
   try {
     const raw = await Promise.race([
       callLLM(text),
