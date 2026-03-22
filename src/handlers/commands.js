@@ -106,7 +106,7 @@ async function sendLong(bot, chatId, text, opts = {}) {
     try {
       await bot.sendMessage(chatId, chunk, { parse_mode: 'Markdown', ...opts });
     } catch (err) {
-      if (err.response?.body?.includes('parse entities') || err.message?.includes('parse entities')) {
+      if (err.response?.body?.description?.includes('parse entities') || err.message?.includes('parse entities')) {
         // Markdown parse error — retry as plain text
         await bot.sendMessage(chatId, chunk, opts);
       } else {
@@ -937,7 +937,10 @@ async function executeIntent(bot, msg, intent) {
 /** Extract city name from a weather query. Returns null if not found. */
 function extractWeatherCity(text) {
   const m = text.match(/(?:pogod[aeęiy]|weather)\s+(?:w\s+|in\s+|dla\s+|for\s+)?([A-ZŁŚÓŹ][a-zA-ZłśóźżćńąęĄĆĘŁŃÓŚŹŻ]+(?:\s+[A-ZŁŚÓŹ][a-zA-ZłśóźżćńąęĄĆĘŁŃÓŚŹŻ]+)?)/i);
-  return m ? m[1] : null;
+  if (!m) return null;
+  // Reject lowercase matches (adverbs like "dzisiaj", "teraz") — city names start uppercase
+  if (!/^[A-ZŁŚÓŹ]/u.test(m[1])) return null;
+  return m[1];
 }
 
 async function showConfirmation(bot, msg, intent) {
@@ -998,7 +1001,11 @@ async function handleMessage(bot, msg) {
       if (city) {
         try {
           const wx = await weather.getWeather(city);
-          return bot.sendMessage(chatId, wx, { parse_mode: 'Markdown' });
+          // getWeather returns an error string (not throw) when city is not found
+          if (!wx.startsWith('❌')) {
+            return bot.sendMessage(chatId, wx, { parse_mode: 'Markdown' });
+          }
+          // City not found — fall through to generic web search
         } catch {
           // fall through to generic web search
         }

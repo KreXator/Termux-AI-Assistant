@@ -68,6 +68,8 @@ CRITICAL — use "chat" (not "bot_command") for:
 - Questions about how things work: "jak działa RSS?", "co to jest briefing?"
 - Code-related tasks: "dodaj mi komentarz", "napisz funkcję"
 - General conversation, greetings, opinions
+- Planning real-world activities: "zaplanuj trasę", "zaplanuj wyjazd", "zaplanuj dzień", "zaplanuj projekt", "stwórz plan" — these are NOT schedule_add!
+- schedule_add is ONLY for "zaplanuj automatyczne wyszukiwanie o HH:MM [query]"
 
 CRITICAL — use "web_search" for:
 - Weather: "pogoda", "jaka pogoda", "sprawdź pogodę"
@@ -79,6 +81,9 @@ CRITICAL — use "web_search" for:
 
 Examples:
 "Pokaż moje zadania" → {"type":"bot_command","intent":"list_todos","lang":"pl","params":{}}
+"pokaż zadania" → {"type":"bot_command","intent":"list_todos","lang":"pl","params":{}}
+"moje zadania" → {"type":"bot_command","intent":"list_todos","lang":"pl","params":{}}
+"lista zadań" → {"type":"bot_command","intent":"list_todos","lang":"pl","params":{}}
 "moje notatki" → {"type":"bot_command","intent":"list_notes","lang":"pl","params":{}}
 "lista przypomnień" → {"type":"bot_command","intent":"list_reminders","lang":"pl","params":{}}
 "zaplanowane wyszukiwania" → {"type":"bot_command","intent":"list_schedules","lang":"pl","params":{}}
@@ -93,6 +98,9 @@ Examples:
 "odpal briefing" → {"type":"bot_command","intent":"briefing_run_now","lang":"pl","params":{"type":"morning"}}
 "odpal wieczorny briefing" → {"type":"bot_command","intent":"briefing_run_now","lang":"pl","params":{"type":"evening"}}
 "zaplanuj wyszukiwanie o 9:00 oferty pracy Node.js" → {"type":"bot_command","intent":"schedule_add","lang":"pl","params":{"time":"09:00","query":"oferty pracy Node.js"}}
+"zaplanuj trasę rowerową 10 km" → {"type":"chat","intent":null,"lang":"pl","params":{}}
+"zaplanuj mi dzień" → {"type":"chat","intent":null,"lang":"pl","params":{}}
+"zaplanuj wyjazd do Krakowa" → {"type":"chat","intent":null,"lang":"pl","params":{}}
 "przypomnij mi za 30 minut o spotkaniu" → {"type":"bot_command","intent":"remind","lang":"pl","params":{"when":"30min","text":"spotkanie"}}
 "remind me in 2 hours to send the report" → {"type":"bot_command","intent":"remind","lang":"en","params":{"when":"2h","text":"send the report"}}
 "zapamiętaj że szukam pracy zdalnej" → {"type":"bot_command","intent":"remember","lang":"pl","params":{"fact":"Szuka pracy zdalnej"}}
