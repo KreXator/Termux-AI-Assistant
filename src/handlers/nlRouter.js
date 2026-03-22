@@ -128,7 +128,8 @@ async function callLLM(text) {
   } catch {
     try {
       return await ollama.completeRaw(process.env.MODEL_SMALL || 'qwen2.5:3b-instruct-q4_K_M', messages);
-    } catch {
+    } catch (err2) {
+      console.warn('[nlRouter] both LLM providers failed, defaulting to chat:', err2.message);
       return null;
     }
   }
@@ -186,8 +187,8 @@ const LIST_PRECHECK = [
 ];
 
 // "zaplanuj X" where X is NOT a scheduled-search — force to chat
-// .{0,15} allows words like "mi", "sobie", "nam" between "zaplanuj" and the noun
-const CHAT_OVERRIDE = /\bzaplanuj\b.{0,15}\b(trasę|wyjazd|dzień|projekt|menu|wakacje|podróż|weekend|wycieczkę|aktywność|czas|tydzień)\b/i;
+// .{0,40} allows phrases like "sobie jutro", "nam na weekend" between "zaplanuj" and the noun
+const CHAT_OVERRIDE = /\bzaplanuj\b.{0,40}\b(trasę|wyjazd|dzień|projekt|menu|wakacje|podróż|weekend|wycieczkę|aktywność|czas|tydzień)\b/i;
 
 // "zaplanuj [coś] o HH:MM" — deterministic schedule_add detection
 // Matches: "zaplanuj wyszukiwanie o 9:00 ...", "zaplanuj codzienny przegląd o 8:30 ..."

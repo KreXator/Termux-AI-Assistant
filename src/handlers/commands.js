@@ -520,7 +520,7 @@ async function handleSearch(bot, msg, args) {
   if (!args.length)
     return bot.sendMessage(msg.chat.id, 'Usage: /search [query]');
   const query = args.join(' ');
-  await bot.sendMessage(msg.chat.id, `🔍 Searching: _${query}_...`);
+  await bot.sendMessage(msg.chat.id, `🔍 Searching: _${esc(query)}_...`);
   const results = await search.webSearch(query);
   await sendLong(bot, msg.chat.id, results);
 }
@@ -723,8 +723,7 @@ async function executeIntent(bot, msg, intent) {
         return true;
       }
       await db.setBriefingConfig(userId, { morningEnabled: true, eveningEnabled: true, chatId });
-      const bSched = require('../scheduler/briefingScheduler');
-      await bSched.reload(userId, chatId);
+      await bScheduler.reload(userId, chatId);
       const cfg = await db.getBriefingConfig(userId);
       await bot.sendMessage(chatId,
         `✅ ${t(lang, 'Reports enabled', 'Raporty włączone')}.\n${t(lang, 'Morning', 'Poranny')}: *${cfg.morningTime}* | ${t(lang, 'Evening', 'Wieczorny')}: *${cfg.eveningTime}*`,
@@ -734,8 +733,7 @@ async function executeIntent(bot, msg, intent) {
 
     case 'briefing_off': {
       await db.setBriefingConfig(userId, { morningEnabled: false, eveningEnabled: false });
-      const bSched = require('../scheduler/briefingScheduler');
-      await bSched.reload(userId, chatId);
+      await bScheduler.reload(userId, chatId);
       await bot.sendMessage(chatId, `⏹ ${t(lang, 'Reports disabled.', 'Raporty wyłączone.')}`);
       return true;
     }
@@ -756,8 +754,7 @@ async function executeIntent(bot, msg, intent) {
       const updates   = { [timeKey]: time };
       if (enable) updates[enableKey] = true;
       await db.setBriefingConfig(userId, updates);
-      const bSched = require('../scheduler/briefingScheduler');
-      await bSched.reload(userId, chatId);
+      await bScheduler.reload(userId, chatId);
       const onOff = enable ? t(lang, ' and enabled', ' i włączony') : '';
       await bot.sendMessage(chatId,
         `✅ ${t(lang, 'Time for', 'Godzina')} ${labelStr} ${t(lang, 'report', 'raportu')}: *${time}*${onOff}`,
