@@ -1,12 +1,16 @@
 /**
  * openrouter.js — OpenRouter API client (OpenAI-compatible)
  *
- * Routing strategy (fire-and-forget):
- *   1. google/gemma-3-*:free — specific free models with consistent Polish support
- *   2. OR_MODEL_PREMIUM      — cheap paid fallback (~$0.005/msg) when free tier is exhausted
- *   3. Ollama           — local fallback (handled in client.js)
+ * Model tiers:
+ *   small  (💬) google/gemma-3-4b-it:free        — free, routing + simple tasks
+ *   medium (⚡) mistralai/mistral-small-2603      — paid daily driver, Intel 19, best Polish
+ *   large  (🧠) openai/gpt-4.1-mini              — paid, complex tasks / code, Intel 23
+ *   coder  (🛠️) openai/gpt-4.1-mini              — same as large (GPT-4.1 strong at coding)
+ *   premium(💰) google/gemini-2.5-flash           — best available, manual /model premium
  *
- * Vision: google/gemma-3-12b-it:free (natively multimodal)
+ * Free models (small): cascade to premium on 429.
+ * Paid models (medium/large): called directly, no cascade.
+ * Ollama: local fallback when OpenRouter is unavailable (handled in client.js).
  */
 'use strict';
 
@@ -20,21 +24,20 @@ const MODEL_SMALL  = process.env.MODEL_SMALL  || 'qwen2.5:3b-instruct-q4_K_M';
 const MODEL_MEDIUM = process.env.MODEL_MEDIUM || 'qwen2.5:7b-instruct-q4_K_M';
 const MODEL_LARGE  = process.env.MODEL_LARGE  || 'qwen3:8b';
 
-// Specific free models — consistent quality, good Polish support.
-// Override via env vars for custom routing.
 const OR_MODEL_SMALL   = process.env.OR_MODEL_SMALL   || 'google/gemma-3-4b-it:free';
-const OR_MODEL_MEDIUM  = process.env.OR_MODEL_MEDIUM  || 'google/gemma-3-12b-it:free';
-const OR_MODEL_LARGE   = process.env.OR_MODEL_LARGE   || 'google/gemma-3-27b-it:free';
+// Mistral Small 4 (2603): Intel 19, 0.59s TTFT, European company → strong Polish, $0.15/$0.60/M
+const OR_MODEL_MEDIUM  = process.env.OR_MODEL_MEDIUM  || 'mistralai/mistral-small-2603';
+// GPT-4.1 mini: Intel 23, 1M ctx, strong at code + reasoning, $0.40/$1.60/M
+const OR_MODEL_LARGE   = process.env.OR_MODEL_LARGE   || 'openai/gpt-4.1-mini';
 const OR_VISION_MODEL  = process.env.OR_VISION_MODEL  || 'google/gemma-3-12b-it:free';
 
-// Paid fallback — used automatically when free tier is exhausted (429).
-// Also manually selectable via /model premium.
-// ~$0.005 per conversation, no upstream rate limits.
-const OR_MODEL_PREMIUM = process.env.OR_MODEL_PREMIUM || 'google/gemini-2.5-flash-lite';
+// Best available — manually selectable via /model premium.
+// Gemini 2.5 Flash: 88.4% Global-MMLU, reasoning toggle, $0.30/$2.50/M.
+const OR_MODEL_PREMIUM = process.env.OR_MODEL_PREMIUM || 'google/gemini-2.5-flash';
 
-// Coding-specialized free model — manually selectable via /model code.
-// Nemotron 3 Super: 120B MoE (12B active), 262K ctx, NVIDIA-hosted (no Venice rate limits).
-const OR_MODEL_CODER   = process.env.OR_MODEL_CODER   || 'nvidia/nemotron-3-super-120b-a12b:free';
+// Coding model — manually selectable via /model code.
+// GPT-4.1 mini: same as LARGE, strong SWE-bench performance.
+const OR_MODEL_CODER   = process.env.OR_MODEL_CODER   || 'openai/gpt-4.1-mini';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -65,6 +68,7 @@ function mapModel(localModel) {
 /**
  * Google AI Studio (Gemma) rejects the 'system' role ("Developer instruction is not enabled").
  * Convert system message → user/assistant handshake so the instruction still reaches the model.
+ * Only applied for Gemma models — Mistral, OpenAI, etc. support system role natively.
  */
 function injectSystemAsUser(messages) {
   const sysIdx = messages.findIndex(m => m.role === 'system');
@@ -78,6 +82,10 @@ function injectSystemAsUser(messages) {
   ];
 }
 
+function needsSystemWorkaround(orModel) {
+  return orModel.startsWith('google/gemma');
+}
+
 /**
  * Send a messages array to OpenRouter and return the assistant reply text.
  * @param {string} localModel  — local tier name (mapped internally to OR model)
@@ -87,8 +95,8 @@ function injectSystemAsUser(messages) {
 async function complete(localModel, messages) {
   if (!OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY not set');
 
-  const orModel   = mapModel(localModel);
-  const normalized = injectSystemAsUser(messages);
+  const orModel    = mapModel(localModel);
+  const normalized = needsSystemWorkaround(orModel) ? injectSystemAsUser(messages) : messages;
   console.log(`[openrouter] calling model=${orModel}, messages=${normalized.length}`);
 
   let res;

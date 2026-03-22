@@ -1,7 +1,7 @@
 /**
  * client.js — Unified LLM client
  *
- * Primary:  OpenRouter (free cloud models) — when OPENROUTER_API_KEY is set
+ * Primary:  OpenRouter (paid daily driver + free small tier) — when OPENROUTER_API_KEY is set
  * Fallback: Local Ollama                   — when OR is unavailable or not configured
  *
  * Handles all history / memory / persona logic so providers only deal with
@@ -75,36 +75,39 @@ function resolveDisplayModel(localModel) {
 // ─── OpenRouter cascade ───────────────────────────────────────────────────────
 
 /**
- * Try OpenRouter with automatic paid fallback on 429.
+ * Try OpenRouter — paid models direct, free models with premium fallback on 429.
  *
- * Flow:
- *   1. OR_MODEL_SMALL/MEDIUM/LARGE (google/gemma-3-*:free by default)
- *      → specific free model, predictable quality and Polish support
- *      → on 429 (rate-limited) falls through to step 2
- *   2. OR_MODEL_PREMIUM (google/gemini-2.5-flash-lite)
- *      → cheap paid model, no upstream rate limits
+ * Flow for free models (ends with :free):
+ *   1. primary free model → on 429 → OR_MODEL_PREMIUM (gemini-2.5-flash)
+ * Flow for paid models (medium/large/premium/coder):
+ *   1. model directly — no cascade, paid APIs have no upstream rate limits
  *
- * Throws on non-429 errors or when paid fallback also fails.
+ * Throws on non-429 errors or when fallback also fails.
  * Caller (chat()) catches and routes to Ollama.
  */
 async function tryOpenRouterWithCascade(model, messages) {
-  // Map local tier name (e.g. qwen2.5:7b) → configured OR model (e.g. google/gemma-3-12b-it:free)
   const primary = openrouter.mapModel(model);
   const paid    = openrouter.OR_MODEL_PREMIUM;
 
-  // Step 1: primary (configured free model or user-selected model)
+  // Paid models: call directly, no cascade needed
+  if (!primary.endsWith(':free')) {
+    const reply = await openrouter.complete(primary, messages);
+    console.log(`[client] provider=openrouter model=${primary}`);
+    return reply;
+  }
+
+  // Free models: cascade to premium on 429
   try {
     const reply = await openrouter.complete(primary, messages);
     console.log(`[client] provider=openrouter model=${primary}`);
     return reply;
   } catch (err) {
     if (err.response?.status !== 429 || primary === paid) throw err;
-    console.warn(`[client] OR free model rate-limited (429), trying paid fallback…`);
+    console.warn(`[client] OR free model rate-limited (429), falling back to premium…`);
   }
 
-  // Step 2: paid fallback
   const reply = await openrouter.complete(paid, messages);
-  console.log(`[client] provider=openrouter model=${paid} (paid fallback)`);
+  console.log(`[client] provider=openrouter model=${paid} (premium fallback)`);
   return reply;
 }
 
