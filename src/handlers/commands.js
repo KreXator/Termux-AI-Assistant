@@ -948,6 +948,28 @@ async function handleMessage(bot, msg) {
     }
   }
 
+  // NL routing for read-only bot commands — direct dispatch, no LLM needed
+  if (/\b(zaplanowane\s+(wyszukiwania?|zadania?|harmonogram|szukania?)|mój\s+harmonogram|scheduled\s+searches?)\b/i.test(text) ||
+      /^(pokaż|lista?|list|show|wyświetl)\s+(zaplanowane|harmonogram|schedules?)/i.test(text)) {
+    return handleScheduleList(bot, msg);
+  }
+  if (/^(pokaż|lista?\s+(zada[nń]|todo)|show\s+(todos?|tasks?))/i.test(text) ||
+      /\bmoje\s+(zadania|todos?)\b/i.test(text)) {
+    return handleTodos(bot, msg);
+  }
+  if (/^(pokaż|lista?|list|show|wyświetl)\s+(notatki|notes?)/i.test(text) ||
+      /\bmoje\s+notatki\b/i.test(text)) {
+    return handleNotes(bot, msg);
+  }
+  if (/^(pokaż|lista?|list|show|wyświetl)\s+(przypomnienia|reminders?)/i.test(text) ||
+      /\bmoje\s+przypomnienia\b/i.test(text)) {
+    return handleReminders(bot, msg);
+  }
+  if (/^(pokaż|lista?|list|show|wyświetl)\s+(pamięć|memory|zapamiętane|fakty)/i.test(text) ||
+      /\bmoja\s+pamięć\b/i.test(text)) {
+    return handleMemory(bot, msg);
+  }
+
   await bot.sendChatAction(chatId, 'typing');
 
   const manualModel = cfg.manualModel ? cfg.model : null;
