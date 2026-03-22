@@ -189,8 +189,25 @@ const LIST_PRECHECK = [
 // .{0,15} allows words like "mi", "sobie", "nam" between "zaplanuj" and the noun
 const CHAT_OVERRIDE = /\bzaplanuj\b.{0,15}\b(trasę|wyjazd|dzień|projekt|menu|wakacje|podróż|weekend|wycieczkę|aktywność|czas|tydzień)\b/i;
 
+// "zaplanuj [coś] o HH:MM" — deterministic schedule_add detection
+// Matches: "zaplanuj wyszukiwanie o 9:00 ...", "zaplanuj codzienny przegląd o 8:30 ..."
+const SCHEDULE_ADD_RE = /\bzaplanuj\b.{0,40}\bo\s+(\d{1,2}:\d{2})\b/i;
+
 function precheck(text) {
   if (CHAT_OVERRIDE.test(text)) return { type: 'chat', intent: null, lang: 'pl', params: {} };
+
+  // schedule_add: "zaplanuj ... o HH:MM" — extract time and use rest as query
+  const schedMatch = SCHEDULE_ADD_RE.exec(text);
+  if (schedMatch) {
+    const time  = schedMatch[1].padStart(5, '0');  // "8:30" → "08:30"
+    // Extract query: everything before "o HH:MM", drop "zaplanuj [mi]" prefix
+    const query = text
+      .replace(/\bzaplanuj\s+(?:mi\s+|sobie\s+)?/i, '')
+      .replace(/\s+o\s+\d{1,2}:\d{2}\b.*$/i, '')
+      .trim();
+    return { type: 'bot_command', intent: 'schedule_add', lang: 'pl', params: { time, query } };
+  }
+
   for (const { re, intent } of LIST_PRECHECK) {
     if (re.test(text)) return { type: 'bot_command', intent, lang: 'pl', params: {} };
   }
