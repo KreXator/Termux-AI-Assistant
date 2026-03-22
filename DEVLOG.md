@@ -1,5 +1,32 @@
 # DEVLOG — Termux AI Assistant
 
+## 2026-03-22 — Session 2: code review + 3 new features + streaming
+
+### Files changed
+- **`src/tools/summarizer.js`** (NEW) — fetch URL, strip HTML, summarize via LLM (OR_MODEL_MEDIUM)
+- **`src/handlers/nlRouter.js`** — added `summarize_url` + `daily_digest` intents; URL_PRECHECK_RE, SUMMARIZE_TRIGGER_RE, DAILY_DIGEST_RE prechecks; CHAT_OVERRIDE gap widened `.{0,15}` → `.{0,40}`; `callLLM` now logs warning when both providers fail; `SCHEDULE_ADD_RE` limit `.{0,40}` → `.{0,100}`
+- **`src/handlers/commands.js`** — `summarize_url` + `daily_digest` cases in executeIntent(); `/sum` + `/dzisiaj` slash commands; streaming via `chatStream` with `setInterval`-based debounced edits (800ms); 3× inline `require(briefingScheduler)` removed; `handleSearch` escapes query with `esc()`
+- **`src/llm/openrouter.js`** — `completeStream()` SSE parser
+- **`src/llm/ollama.js`** — `completeRawStream()` NDJSON parser
+- **`src/llm/client.js`** — `chatStream()` with non-streaming fallback on error
+- **`config/personas.json`** — Telegram Markdown V1 rules added to `planner` and `polish` personas
+
+### Key behavior changes
+- `/sum <url>` or pasting URL + "podsumuj" → fetches page, LLM streszcza w 4-5 zdaniach
+- `/dzisiaj` or "co mam dziś" → aggreguje todos + dzisiejsze przypomnienia + zaplanowane wyszukiwania
+- Wszystkie odpowiedzi czatu streamowane (token po tokenie, edit co 800ms)
+- Routing: "zaplanuj sobie jutro trasę o 8:00" nie trafia już do schedule_add (CHAT_OVERRIDE fix)
+
+### Commits
+- `f44ccda` — code review fixes (inline require, esc(), CHAT_OVERRIDE, personas)
+- `ddb67a5` — SCHEDULE_ADD_RE limit 40→100
+- `a2225c9` — feat: URL summarizer, daily digest, streaming (initial)
+- `83774dc` — fix: summarizer uses medium model, streaming setInterval
+
+### Pending
+- Przetestować streaming na Minisforum (Ollama) — czy NDJSON parser działa tak samo jak SSE
+- Rozważyć `/export` (backup wszystkich danych) jako kolejna funkcjonalność
+
 ## 2026-03-22 — Unified NL router (nlRouter.js)
 
 ### Files changed
