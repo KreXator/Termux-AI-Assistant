@@ -137,6 +137,9 @@ Examples:
 "co to jest briefing?" → {"type":"chat","intent":null,"lang":"pl","params":{}}`;
 
 // ─── LLM call ─────────────────────────────────────────────────────────────────
+// Use a dedicated router model — better instruction-following than general chat models.
+// Llama 3.2 3B is significantly more accurate for classification than Gemma 4B free.
+const ROUTER_MODEL = process.env.OR_MODEL_ROUTER || 'meta-llama/llama-3.2-3b-instruct:free';
 
 async function callLLM(text) {
   const messages = [
@@ -144,12 +147,12 @@ async function callLLM(text) {
     { role: 'user',   content: text },
   ];
   try {
-    return await openrouter.complete(openrouter.OR_MODEL_SMALL, messages, 150);
+    return await openrouter.complete(ROUTER_MODEL, messages, 150);
   } catch {
     try {
       return await ollama.completeRaw(process.env.MODEL_SMALL || 'qwen2.5:3b-instruct-q4_K_M', messages);
     } catch (err2) {
-      console.warn('[nlRouter] both LLM providers failed, defaulting to chat:', err2.message);
+      console.warn('[nlRouter] both LLM providers failed, defaulting to web_search:', err2.message);
       return null;
     }
   }
@@ -282,15 +285,25 @@ function precheck(text) {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
+// Short follow-up query signals — these alone don't tell us the topic
+const FOLLOWUP_RE = /^(co|jak|ile|czy|a\s+|i\s+|no\s+to|to\s+|ale\s+|ok\s+|okej|dobra|super|fajnie|świetnie|dzięki|i\s+co|co\s+z|co\s+jeszcze|coś\s+jeszcze|a\s+co|a\s+jak|coś\s+na|polecasz|a\s+może|może\s+coś)\b/i;
+
 /**
  * Classify a plain-text message into a routing decision.
  * Always resolves — never throws.
  * @param {string} text
+ * @param {{ lastRoute?: 'web_search'|'chat'|'bot_command' }} [context]
  * @returns {Promise<{type: 'bot_command'|'web_search'|'chat', intent: string|null, lang: string, params: object}>}
  */
-async function route(text) {
+async function route(text, context = {}) {
   const fast = precheck(text);
   if (fast) return fast;
+
+  // Context-aware routing: short follow-up after web_search → stay in web_search
+  // Prevents hallucination on "Co polecasz z córką?" after event/news query
+  if (context.lastRoute === 'web_search' && text.length < 80 && FOLLOWUP_RE.test(text)) {
+    return { type: 'web_search', intent: null, lang: 'pl', params: {} };
+  }
 
   try {
     const raw = await Promise.race([

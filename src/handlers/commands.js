@@ -30,6 +30,19 @@ const ALLOWED_IDS = (process.env.ALLOWED_USER_IDS || '')
 const pendingIntents = new Map();
 const CONFIRMATION_TTL = 90_000; // 90 seconds — auto-expire pending confirmations
 
+// Per-user last route type — for context-aware follow-up routing
+// Entry expires after 5 minutes of inactivity
+const lastRouteMap  = new Map(); // userId → { type, ts }
+const LAST_ROUTE_TTL = 5 * 60 * 1000;
+function getLastRoute(userId) {
+  const entry = lastRouteMap.get(String(userId));
+  if (!entry || Date.now() - entry.ts > LAST_ROUTE_TTL) return undefined;
+  return entry.type;
+}
+function setLastRoute(userId, type) {
+  lastRouteMap.set(String(userId), { type, ts: Date.now() });
+}
+
 // Intents that execute immediately — no confirmation dialog needed
 const READ_ONLY_INTENTS = new Set([
   'list_todos', 'list_notes', 'list_reminders',
@@ -1159,7 +1172,9 @@ async function handleMessage(bot, msg, { forceChat = false } = {}) {
   // Unified NL router — single LLM call for all routing decisions
   const routeResult = forceChat
     ? { type: 'chat', intent: null, lang: 'pl', params: {} }
-    : await nlRouter.route(text);
+    : await nlRouter.route(text, { lastRoute: getLastRoute(userId) });
+
+  setLastRoute(userId, routeResult.type);
 
   if (routeResult.type === 'bot_command') {
     const intent = { intent: routeResult.intent, lang: routeResult.lang, params: routeResult.params };
