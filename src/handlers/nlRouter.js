@@ -251,12 +251,16 @@ function precheck(text) {
     return { type: 'bot_command', intent: 'daily_digest', lang: 'pl', params: {} };
   }
 
+  // "zapamiętaj/zapisz X" — skip news/live-data prechecks so LLM extracts remember params
+  if (/^(zapamiętaj|zapisz|zanotuj|zapamiętajmy|remember\s+that)\b/i.test(text)) return null;
+
   // Local events queries → redirect (LLM has no local event data, always hallucinates)
   if (/\b(wydarzen[iy]a?\s+(?:lokalne?|na\s+weekend|w\s+\w+)|co\s+(?:robi[ćc]|zwiedzi[ćc]|zobaczy[ćc])\s+(?:z\s+dzieckiem|z\s+córk|z\s+synem|w\s+\w+)|atrakcje?\s+(?:dla|w\s+\w+)|co\s+polecasz\s+(?:z\s+dzieckiem|z\s+córk|z\s+synem|w\s+\w+))\b/i.test(text)) {
     return { type: 'web_search', intent: null, lang: 'pl', params: { subtype: 'local_events' } };
   }
 
   // News queries → show search results directly (LLM hallucinates entire articles)
+  // Only matches when news is the primary intent (guard above already filtered out remember commands).
   // prettier-ignore
   if (/\b(wiadomo[śs]ci|aktualno[śs]ci|przeg[lł][aą]d\s+wiadomo[śs]ci|skr[oó]t\s+wiadomo[śs]ci|(?:lokalne?|regionalne?|krajowe?|[śs]wiatowe?|zagraniczne?|sportowe?)\s+wiadomo[śs]ci|wiadomo[śs]ci\s+(?:lokalne?|krajowe?|ze?\s+[śs]wiata?|z\s+\w+|sportowe?)|headlines?|news\b|co\s+si[ęe]\s+dzieje|co\s+nowego(?:\s|$)|(?:najnowsze?|ostatnie?|aktualne?|bież[aą]ce?)\s+(?:wiadomo[śs]ci|info|doniesienia))\b/i.test(text)) {
     return { type: 'web_search', intent: null, lang: 'pl', params: { subtype: 'news' } };

@@ -74,10 +74,22 @@ async function ddgSearch(query, maxResults = 3) {
  * @param {number} maxResults
  * @returns {Promise<string>}
  */
+/**
+ * Strip Polish/English command verbs from a news query so they don't pollute search results.
+ * "Podaj wiadomości z kraju" → "wiadomości z kraju"  (avoids matching "PODAJ DALEJ" foundation)
+ */
+function cleanNewsQuery(query) {
+  const cleaned = query
+    .replace(/^(podaj|pokaż|pokaż mi|daj|daj mi|podajcie|sprawdź|check out|show me|give me|co to są|jakie są|co nowego w|co nowego z)\s+/i, '')
+    .trim();
+  return cleaned || query;
+}
+
 async function serperNewsSearch(query, maxResults = 5) {
+  const q = cleanNewsQuery(query);
   const res = await axios.post(
     'https://google.serper.dev/news',
-    { q: query, num: maxResults, gl: 'pl', hl: 'pl' },
+    { q, num: maxResults, gl: 'pl', hl: 'pl', tbs: 'qdr:w' },  // past week
     {
       headers: {
         'X-API-KEY': process.env.SERPER_API_KEY,
@@ -88,7 +100,7 @@ async function serperNewsSearch(query, maxResults = 5) {
   );
 
   const hits = (res.data.news || []).slice(0, maxResults);
-  if (!hits.length) return `[Brak wyników dla: "${query}"]`;
+  if (!hits.length) return `[Brak wyników dla: "${q}"]`;
 
   const lines = hits.map((r, i) => {
     const date    = r.date    ? ` _(${r.date})_`    : '';
@@ -97,7 +109,7 @@ async function serperNewsSearch(query, maxResults = 5) {
     return `${i + 1}. [${r.title}](${r.link})${date}\n   ${source}${snippet ? ' — ' + snippet : ''}`;
   });
 
-  return `📰 *Wiadomości:* "${query}"\n\n${lines.join('\n\n')}`;
+  return `📰 *${q}*\n\n${lines.join('\n\n')}`;
 }
 
 // ─── Unified entry point ──────────────────────────────────────────────────────
