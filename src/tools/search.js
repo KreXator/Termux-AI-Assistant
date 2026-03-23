@@ -65,6 +65,41 @@ async function ddgSearch(query, maxResults = 3) {
   return `🔍 DuckDuckGo results for "${query}":\n\n${formatted}`;
 }
 
+// ─── Serper News ──────────────────────────────────────────────────────────────
+
+/**
+ * Fetch news headlines using Serper's /news endpoint.
+ * Returns formatted text ready to send to the user — no LLM needed.
+ * @param {string} query
+ * @param {number} maxResults
+ * @returns {Promise<string>}
+ */
+async function serperNewsSearch(query, maxResults = 5) {
+  const res = await axios.post(
+    'https://google.serper.dev/news',
+    { q: query, num: maxResults, gl: 'pl', hl: 'pl' },
+    {
+      headers: {
+        'X-API-KEY': process.env.SERPER_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      timeout: 10_000,
+    }
+  );
+
+  const hits = (res.data.news || []).slice(0, maxResults);
+  if (!hits.length) return `[Brak wyników dla: "${query}"]`;
+
+  const lines = hits.map((r, i) => {
+    const date    = r.date    ? ` _(${r.date})_`    : '';
+    const source  = r.source  ? `*${r.source}*`     : '';
+    const snippet = (r.snippet || '').slice(0, 180);
+    return `${i + 1}. [${r.title}](${r.link})${date}\n   ${source}${snippet ? ' — ' + snippet : ''}`;
+  });
+
+  return `📰 *Wiadomości:* "${query}"\n\n${lines.join('\n\n')}`;
+}
+
 // ─── Unified entry point ──────────────────────────────────────────────────────
 
 /**
@@ -85,4 +120,4 @@ async function webSearch(query, maxResults = 3) {
   }
 }
 
-module.exports = { webSearch };
+module.exports = { webSearch, serperNewsSearch };

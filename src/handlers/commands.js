@@ -1220,6 +1220,22 @@ async function handleMessage(bot, msg, { forceChat = false } = {}) {
       );
     }
 
+    // News queries: show Serper news results directly — LLM hallucinates entire articles
+    if (routeResult.params?.subtype === 'news') {
+      try {
+        await bot.sendMessage(chatId, '📰 Szukam wiadomości...');
+        if (process.env.SERPER_API_KEY) {
+          const newsText = await search.serperNewsSearch(text);
+          return sendLong(bot, chatId, newsText, { parse_mode: 'Markdown', disable_web_page_preview: true });
+        }
+        // No Serper key — fallback to generic search shown directly
+        const rawResults = await search.webSearch(text);
+        return sendLong(bot, chatId, rawResults.replace(/\*\*/g, '*'), { parse_mode: 'Markdown', disable_web_page_preview: true });
+      } catch (err) {
+        return bot.sendMessage(chatId, `❌ Nie udało się pobrać wiadomości: ${err.message}`);
+      }
+    }
+
     // Navigation queries: skip LLM entirely — always redirect to mapping apps
     if (routeResult.params?.subtype === 'navigation') {
       const q = encodeURIComponent(text);

@@ -256,6 +256,12 @@ function precheck(text) {
     return { type: 'web_search', intent: null, lang: 'pl', params: { subtype: 'local_events' } };
   }
 
+  // News queries → show search results directly (LLM hallucinates entire articles)
+  // prettier-ignore
+  if (/\b(wiadomo[śs]ci|aktualno[śs]ci|przeg[lł][aą]d\s+wiadomo[śs]ci|skr[oó]t\s+wiadomo[śs]ci|(?:lokalne?|regionalne?|krajowe?|[śs]wiatowe?|zagraniczne?|sportowe?)\s+wiadomo[śs]ci|wiadomo[śs]ci\s+(?:lokalne?|krajowe?|ze?\s+[śs]wiata?|z\s+\w+|sportowe?)|headlines?|news\b|co\s+si[ęe]\s+dzieje|co\s+nowego(?:\s|$)|(?:najnowsze?|ostatnie?|aktualne?|bież[aą]ce?)\s+(?:wiadomo[śs]ci|info|doniesienia))\b/i.test(text)) {
+    return { type: 'web_search', intent: null, lang: 'pl', params: { subtype: 'news' } };
+  }
+
   // Live/current-data queries → web_search (LLM hallucinates time-sensitive data)
   if (LIVE_DATA_RE.test(text)) {
     return { type: 'web_search', intent: null, lang: 'pl', params: {} };
