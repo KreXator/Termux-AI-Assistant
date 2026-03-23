@@ -201,7 +201,7 @@ const SUMMARIZE_TRIGGER_RE = /\b(podsumuj|streszcz|streścij|summarize|tldr|prze
 const DAILY_DIGEST_RE = /\b(co\s+mam\s+dzi[śs]|plan\s+na\s+dzi[śs]|m[oó]j\s+dzie[nń]|standup|co\s+dzi[śs]\b)/i;
 
 // Navigation queries → web_search (LLM hallucinates local street names)
-const NAV_SEARCH_RE = /\b(jak\s+(?:dojechać|dojadę|dotrzeć|dojść)|drog[ęa]\s+powrotn|trasa?\s+rowerow|trasa?\s+(?:piesz|samochodow)|(?:wymyśl|zaproponuj|pokaż|podaj)\s+.{0,30}(?:trasa?|droga?|tras[ęa])\s+(?:rowerow|do\s+[A-ZŁŚÓŹ]))/i;
+const NAV_SEARCH_RE = /\b(jak\s+(?:dojechać|dojadę|dotrzeć|dojść)|drog[ęa]\s+powrotn|trasa?\s+rowerow|trasa?\s+(?:piesz|samochodow)|(?:wymyśl|zaproponuj|pokaż|podaj|polecasz?|poleć)\s+.{0,40}tras[ęea]?|jak[aą]\s+tras[ęa]|(?:lekk[aą]|ciekaw[aą]|fajna?|krótk[aą]|ładn[aą])\s+tras[ęa]|tras[ęa]\s+.{0,30}(?:polecasz?|zaproponuj|wymyśl|poleć)|wycieczk[ięa]\s+rowerow)/i;
 
 const LIST_PRECHECK = [
   { re: /\b(moje\s+)?notatki\b|\blista\s+notatek\b|\bpokaż\s+notatki\b/i,                intent: 'list_notes'     },
