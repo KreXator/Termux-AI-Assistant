@@ -26,7 +26,10 @@ const JOBS_RE    = /pracuj\.pl|oferty\s+pracy|ogłoszenia\s+pracy/i;
 async function executeQuery(query) {
   const weatherMatch = WEATHER_RE.exec(query);
   if (weatherMatch) {
-    return await weather.getWeather(weatherMatch[1].trim());
+    let loc = weatherMatch[1].trim();
+    // Strip common prepositions that might be captured
+    loc = loc.replace(/^(?:w|in|dla|for)\s+/i, '');
+    return await weather.getWeather(loc);
   }
   if (NEWS_RE.test(query)) {
     // If it's a general review/digest, use the structured 3-category tool
