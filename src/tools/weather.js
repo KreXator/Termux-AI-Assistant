@@ -42,19 +42,54 @@ function wmoDesc(code)  { return WMO_DESC[code]  || `Conditions code ${code}`; }
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 /**
+ * Normalize Polish city names from locative/accusative to nominative.
+ */
+function normalizeCity(city) {
+  let c = city.trim();
+  const lower = c.toLowerCase();
+  
+  // Case-insensitive mapping for locative/accusative forms
+  const maps = {
+    'zielonej gorze': 'Zielona Góra',
+    'zielonej górze': 'Zielona Góra',
+    'warszawie': 'Warszawa',
+    'krakowie': 'Kraków',
+    'wrocławiu': 'Wrocław',
+    'wroclawiu': 'Wrocław',
+    'poznaniu': 'Poznań',
+    'gdansku': 'Gdańsk',
+    'gdańsku': 'Gdańsk',
+    'lodzi': 'Łódź',
+    'łodzi': 'Łódź',
+    'szczecinie': 'Szczecin',
+    'bydgoszczy': 'Bydgoszcz',
+    'lublinie': 'Lublin',
+    'bialymstoku': 'Białystok',
+    'białymstoku': 'Białystok',
+  };
+  
+  if (maps[lower]) return maps[lower];
+  
+  // Generic suffix trimming
+  c = c.replace(/ie$/i, 'a'); // Warszawie -> Warszawa
+  return c;
+}
+
+/**
  * Get current weather for a city name.
  * @param {string} city
  * @returns {Promise<string>} formatted weather string
  */
 async function getWeather(city) {
+  const normalizedCity = normalizeCity(city);
   // 1. Geocode city name
   const geoRes = await axios.get('https://geocoding-api.open-meteo.com/v1/search', {
-    params: { name: city, count: 1, language: 'en', format: 'json' },
+    params: { name: normalizedCity, count: 1, language: 'pl', format: 'json' },
     timeout: 8_000,
   });
 
   const locations = geoRes.data.results;
-  if (!locations?.length) return `❌ No location found for *${city}*. Try a more specific name.`;
+  if (!locations?.length) return `❌ No location found for *${city}* (search: *${normalizedCity}*). Try a more specific name.`;
 
   const { name, country, admin1, latitude, longitude } = locations[0];
   const locationStr = [name, admin1, country].filter(Boolean).join(', ');
