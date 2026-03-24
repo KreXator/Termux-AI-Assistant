@@ -810,7 +810,11 @@ async function handlePhoto(bot, msg) {
     await bot.deleteMessage(chatId, waitMsg.message_id).catch(() => {});
     let errMsg = `❌ Vision error: ${err.message}`;
     if (err.code === 'ECONNREFUSED')
-      errMsg = `❌ Vision unavailable: OpenRouter unreachable and Ollama not running.\nStart Ollama: \`ollama serve\``;
+      errMsg = `❌ Vision unavailable: Ollama is not running locally.\nStart Ollama: \`ollama serve\``;
+    else if (err.response?.status === 429)
+      errMsg = `❌ Vision model rate-limited. Try again in a moment.`;
+    else if (err.response?.status >= 400)
+      errMsg = `❌ Vision API error ${err.response.status}: ${err.response.data?.error?.message || err.message}`;
     await bot.sendMessage(chatId, errMsg, { parse_mode: 'Markdown' });
   }
 }

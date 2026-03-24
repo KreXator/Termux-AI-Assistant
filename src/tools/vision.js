@@ -80,23 +80,31 @@ async function analyzeImage(bot, fileId, prompt = 'Describe this image in detail
     const mimeType  = ext === '.png' ? 'image/png' : 'image/jpeg';
 
     // 4a. Try OpenRouter vision (primary)
+    let orError = null;
     if (process.env.OPENROUTER_API_KEY) {
       try {
         return await openrouter.completeVision(imageData, prompt, mimeType);
       } catch (err) {
+        orError = err;
         console.warn('[vision] OpenRouter failed, falling back to Ollama:', err.message);
       }
     }
 
     // 4b. Ollama fallback
-    const res = await axios.post(`${OLLAMA_BASE}/api/chat`, {
-      model:    VISION_MODEL,
-      stream:   false,
-      messages: [{ role: 'user', content: prompt, images: [imageData] }],
-    }, { timeout: 120_000 });
+    try {
+      const res = await axios.post(`${OLLAMA_BASE}/api/chat`, {
+        model:    VISION_MODEL,
+        stream:   false,
+        messages: [{ role: 'user', content: prompt, images: [imageData] }],
+      }, { timeout: 120_000 });
 
-    const reply = res.data.message?.content || '';
-    return reply.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+      const reply = res.data.message?.content || '';
+      return reply.replace(/<think>[\s\S]*?<\/think>\s*/g, '').trim();
+    } catch (ollamaErr) {
+      // Surface the more actionable error: if OpenRouter was tried, report its error
+      if (orError) throw orError;
+      throw ollamaErr;
+    }
   } finally {
     fs.unlink(tmpPath, () => {});
   }
