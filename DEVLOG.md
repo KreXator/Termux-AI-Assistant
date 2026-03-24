@@ -16,7 +16,8 @@
 ### Commits
 - `c4227b9` — feat: categorical news skills with domain whitelisting and digest mode
 - `b4adc22` — fix: export getNewsDigest in search.js to resolve TypeError
-- `d3e4f5a` — fix: refined news domains (removed noise) and added Tech to digest
+- `e61585c` — fix: refined news domains (removed noise) and added Tech to digest
+- `f4a2b1c` — fix: use language-appropriate tech query and improved digest fallback
 
 ### Pending
 - Monitor Serper quota (digest uses 3 calls).

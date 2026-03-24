@@ -154,18 +154,20 @@ async function getNewsDigest(query = 'nowe wydarzenia') {
   try {
     const results = await Promise.allSettled([
       serperNewsSearch('Zielona Góra', 3, 'local'),
-      serperNewsSearch('Polska wydarzenia', 3, 'country'),
-      serperNewsSearch('World breaking news', 3, 'world'),
-      serperNewsSearch('technologia', 3, 'tech')
+      serperNewsSearch('Polska najważniejsze informacje', 3, 'country'),
+      serperNewsSearch('breaking news world', 3, 'world'),
+      serperNewsSearch('technology', 3, 'tech') // Using English 'technology' for broader tech results
     ]);
 
     const sections = results.map((res, i) => {
-      if (res.status === 'fulfilled') return res.value;
-      const categoriesPl = ['Lokalne', 'Krajowe', 'Świat', 'Technologia'];
-      return `❌ Błąd w kategorii ${categoriesPl[i]}: ${res.reason.message}`;
+      const categoriesPl = ['🏙️ ZIELONA GÓRA', '🇵🇱 POLSKA', '🌍 ŚWIAT', '💻 TECHNOLOGIA'];
+      if (res.status === 'fulfilled' && !res.value.includes('[Brak wyników]')) {
+        return res.value;
+      }
+      return `⚠️ *${categoriesPl[i]}*: Brak świeżych wiadomości z ostatnich 24h.`;
     });
 
-    return `🗓️ *CODZIENNY PRZEGLĄD WIADOMOŚCI*\n_${new Date().toLocaleDateString('pl-PL')}_\n\n${sections.join('\n\n---\n\n')}`;
+    return `🗓️ *CODZIENNY PRZEGLĄD WIADOMOŚCI*\n_${new Date().toLocaleDateString('pl-PL', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}_\n\n${sections.join('\n\n---\n\n')}`;
   } catch (err) {
     return `❌ Nie udało się wygenerować przeglądu: ${err.message}`;
   }
