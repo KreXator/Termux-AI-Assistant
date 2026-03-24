@@ -21,29 +21,36 @@ try {
 // ─── Serper (Google) ─────────────────────────────────────────────────────────
 
 async function serperSearch(query, maxResults = 3) {
-  const res = await axios.post(
-    'https://google.serper.dev/search',
-    { q: query, num: maxResults },
-    {
-      headers: {
-        'X-API-KEY': process.env.SERPER_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      timeout: 10_000,
+  try {
+    const res = await axios.post(
+      'https://google.serper.dev/search',
+      { q: query, num: maxResults },
+      {
+        headers: {
+          'X-API-KEY': process.env.SERPER_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        timeout: 10_000,
+      }
+    );
+
+    const hits = (res.data.organic || []).slice(0, maxResults);
+    if (!hits.length) return `[No results found for: "${query}"]`;
+
+    const formatted = hits
+      .map((r, i) => {
+        const snippet = (r.snippet || '').slice(0, 150);
+        return `**${i + 1}. ${r.title}**\n${r.link}\n${snippet}`;
+      })
+      .join('\n\n');
+
+    return `🔍 Google results for "${query}":\n\n${formatted}`;
+  } catch (err) {
+    if (err.response?.status === 429) {
+      return `[Rate limit exceeded for Serper API. Please try again later or check your SERPER_API_KEY quota.]`;
     }
-  );
-
-  const hits = (res.data.organic || []).slice(0, maxResults);
-  if (!hits.length) return `[No results found for: "${query}"]`;
-
-  const formatted = hits
-    .map((r, i) => {
-      const snippet = (r.snippet || '').slice(0, 150);
-      return `**${i + 1}. ${r.title}**\n${r.link}\n${snippet}`;
-    })
-    .join('\n\n');
-
-  return `🔍 Google results for "${query}":\n\n${formatted}`;
+    throw err;
+  }
 }
 
 // ─── DuckDuckGo scrape fallback ───────────────────────────────────────────────
@@ -86,30 +93,37 @@ function cleanNewsQuery(query) {
 }
 
 async function serperNewsSearch(query, maxResults = 5) {
-  const q = cleanNewsQuery(query);
-  const res = await axios.post(
-    'https://google.serper.dev/news',
-    { q, num: maxResults, gl: 'pl', hl: 'pl', tbs: 'qdr:w' },  // past week
-    {
-      headers: {
-        'X-API-KEY': process.env.SERPER_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      timeout: 10_000,
+  try {
+    const q = cleanNewsQuery(query);
+    const res = await axios.post(
+      'https://google.serper.dev/news',
+      { q, num: maxResults, gl: 'pl', hl: 'pl', tbs: 'qdr:w' },  // past week
+      {
+        headers: {
+          'X-API-KEY': process.env.SERPER_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        timeout: 10_000,
+      }
+    );
+
+    const hits = (res.data.news || []).slice(0, maxResults);
+    if (!hits.length) return `[Brak wyników dla: "${q}"]`;
+
+    const lines = hits.map((r, i) => {
+      const date = r.date ? ` _(${r.date})_` : '';
+      const source = r.source ? `*${r.source}*` : '';
+      const snippet = (r.snippet || '').slice(0, 180);
+      return `${i + 1}. [${r.title}](${r.link})${date}\n   ${source}${snippet ? ' — ' + snippet : ''}`;
+    });
+
+    return `📰 *${q}*\n\n${lines.join('\n\n')}`;
+  } catch (err) {
+    if (err.response?.status === 429) {
+      return `[Rate limit exceeded for Serper News API. Please try again later or check your SERPER_API_KEY quota.]`;
     }
-  );
-
-  const hits = (res.data.news || []).slice(0, maxResults);
-  if (!hits.length) return `[Brak wyników dla: "${q}"]`;
-
-  const lines = hits.map((r, i) => {
-    const date    = r.date    ? ` _(${r.date})_`    : '';
-    const source  = r.source  ? `*${r.source}*`     : '';
-    const snippet = (r.snippet || '').slice(0, 180);
-    return `${i + 1}. [${r.title}](${r.link})${date}\n   ${source}${snippet ? ' — ' + snippet : ''}`;
-  });
-
-  return `📰 *${q}*\n\n${lines.join('\n\n')}`;
+    throw err;
+  }
 }
 
 // ─── Serper Jobs ──────────────────────────────────────────────────────────────
@@ -122,40 +136,47 @@ async function serperNewsSearch(query, maxResults = 5) {
  * @returns {Promise<string>}
  */
 async function serperJobsSearch(query, maxResults = 5) {
-  const res = await axios.post(
-    'https://google.serper.dev/search',
-    { q: query, num: maxResults, gl: 'pl', hl: 'pl' },
-    {
-      headers: {
-        'X-API-KEY': process.env.SERPER_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      timeout: 10_000,
-    }
-  );
+  try {
+    const res = await axios.post(
+      'https://google.serper.dev/search',
+      { q: query, num: maxResults, gl: 'pl', hl: 'pl' },
+      {
+        headers: {
+          'X-API-KEY': process.env.SERPER_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        timeout: 10_000,
+      }
+    );
 
-  // Google Jobs cards (Serper may include these for job queries)
-  const jobCards = res.data.jobs || [];
-  if (jobCards.length) {
-    const lines = jobCards.slice(0, maxResults).map((j, i) => {
-      const salary   = j.salary       ? ` · *${j.salary}*`       : '';
-      const location = j.location     ? ` · 📍 ${j.location}`    : '';
-      const via      = j.via          ? ` · ${j.via}`             : '';
-      const link     = (j.applyOptions?.[0]?.link) || j.shareLink || '';
-      return `${i + 1}. *${j.title}*\n   ${j.companyName || ''}${salary}${location}${via}${link ? '\n   ' + link : ''}`;
+    // Google Jobs cards (Serper may include these for job queries)
+    const jobCards = res.data.jobs || [];
+    if (jobCards.length) {
+      const lines = jobCards.slice(0, maxResults).map((j, i) => {
+        const salary = j.salary ? ` · *${j.salary}*` : '';
+        const location = j.location ? ` · 📍 ${j.location}` : '';
+        const via = j.via ? ` · ${j.via}` : '';
+        const link = (j.applyOptions?.[0]?.link) || j.shareLink || '';
+        return `${i + 1}. *${j.title}*\n   ${j.companyName || ''}${salary}${location}${via}${link ? '\n   ' + link : ''}`;
+      });
+      return `💼 *${query}*\n\n${lines.join('\n\n')}`;
+    }
+
+    // Fallback: organic results with job-focused formatting
+    const hits = (res.data.organic || []).slice(0, maxResults);
+    if (!hits.length) return `[Brak wyników dla: "${query}"]`;
+
+    const lines = hits.map((r, i) => {
+      const snippet = (r.snippet || '').slice(0, 200);
+      return `${i + 1}. [${r.title}](${r.link})\n   ${snippet}`;
     });
     return `💼 *${query}*\n\n${lines.join('\n\n')}`;
+  } catch (err) {
+    if (err.response?.status === 429) {
+      return `[Rate limit exceeded for Serper Jobs API. Please try again later or check your SERPER_API_KEY quota.]`;
+    }
+    throw err;
   }
-
-  // Fallback: organic results with job-focused formatting
-  const hits = (res.data.organic || []).slice(0, maxResults);
-  if (!hits.length) return `[Brak wyników dla: "${query}"]`;
-
-  const lines = hits.map((r, i) => {
-    const snippet = (r.snippet || '').slice(0, 200);
-    return `${i + 1}. [${r.title}](${r.link})\n   ${snippet}`;
-  });
-  return `💼 *${query}*\n\n${lines.join('\n\n')}`;
 }
 
 // ─── Unified entry point ──────────────────────────────────────────────────────
