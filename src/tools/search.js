@@ -76,8 +76,8 @@ async function ddgSearch(query, maxResults = 3) {
 
 const NEWS_DOMAINS = {
   local:   ['gazetalubuska.pl', 'wzielonej.pl', 'zielonanews.pl', 'rzg.pl'],
-  country: ['tvn24.pl', 'rmf24.pl', 'onet.pl', 'wp.pl', 'interia.pl', 'rp.pl'],
-  world:   ['reuters.com', 'bbc.com', 'cnn.com', 'theguardian.com', 'dw.com'],
+  country: ['tvn24.pl', 'rmf24.pl', 'polsatnews.pl', 'rp.pl', 'gazeta.pl'], // Removed wp.pl/interia.pl (too much SEO noise)
+  world:   ['reuters.com', 'bbc.com', 'cnn.com', 'theguardian.com', 'dw.com', 'aljazeera.com'],
   tech:    ['spidersweb.pl', 'dobreprogramy.pl', 'theverge.com', 'techcrunch.com', 'wired.com', 'engadget.com']
 };
 
@@ -123,7 +123,11 @@ async function serperNewsSearch(query, maxResults = 5, category = null) {
     );
 
     const hits = (res.data.news || []).slice(0, maxResults);
-    if (!hits.length) return `[Brak wyników dla: "${q}"]`;
+    if (!hits.length) {
+      // Fallback: if no news in 24h, try 48h or broader query
+      if (category === 'local') return `[Brak najnowszych wiadomości z Zielonej Góry z ostatnich 24h]`;
+      return `[Brak wyników dla: "${q}"]`;
+    }
 
     const lines = hits.map((r, i) => {
       const date = r.date ? ` _(${r.date})_` : '';
@@ -144,19 +148,21 @@ async function serperNewsSearch(query, maxResults = 5, category = null) {
 }
 
 /**
- * Multi-source overview: Local, Country, World.
+ * Multi-source overview: Local, Country, World, Tech.
  */
-async function getNewsDigest(query = 'najważniejsze wiadomości') {
+async function getNewsDigest(query = 'nowe wydarzenia') {
   try {
     const results = await Promise.allSettled([
       serperNewsSearch('Zielona Góra', 3, 'local'),
-      serperNewsSearch('Polska', 3, 'country'),
-      serperNewsSearch('World', 3, 'world')
+      serperNewsSearch('Polska wydarzenia', 3, 'country'),
+      serperNewsSearch('World breaking news', 3, 'world'),
+      serperNewsSearch('technologia', 3, 'tech')
     ]);
 
     const sections = results.map((res, i) => {
       if (res.status === 'fulfilled') return res.value;
-      return `❌ Błąd w kategorii ${['Lokalne', 'Krajowe', 'Świat'][i]}: ${res.reason.message}`;
+      const categoriesPl = ['Lokalne', 'Krajowe', 'Świat', 'Technologia'];
+      return `❌ Błąd w kategorii ${categoriesPl[i]}: ${res.reason.message}`;
     });
 
     return `🗓️ *CODZIENNY PRZEGLĄD WIADOMOŚCI*\n_${new Date().toLocaleDateString('pl-PL')}_\n\n${sections.join('\n\n---\n\n')}`;
