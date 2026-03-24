@@ -1,5 +1,20 @@
 # DEVLOG — Termux AI Assistant
 
+## 2026-03-24 — Session 4: Reliability — Guard fix & robust handlers
+
+### Files changed
+- **`src/handlers/commands.js`** — Updated `guard(handler)` to use `Promise.resolve()` for safe sync/async execution; made `on('message')` handler `async` to ensure Promise return when skipping commands.
+
+### Key behavior changes
+- **Fix**: Bot no longer crashes with `TypeError: Cannot read properties of undefined (reading 'catch')` when a user sends a command.
+- **Robustness**: Any handler wrapped in `guard` that returns `undefined` or a non-promise value is now safely handled.
+
+### Commits
+- `[pending]` — fix: robust guard handler to prevent TypeError on undefined return
+
+### Pending
+- Test `/schedule test` on Railway to verify routing works in production
+
 ## 2026-03-24 — Session 3: smart scheduled alert routing
 
 ### Files changed

@@ -1352,10 +1352,7 @@ function register(bot) {
         return bot.sendMessage(msg.chat.id, '🚫 Unauthorized.');
       }
       try {
-        const result = typeof handler === 'function' ? handler(msg, match) : undefined;
-        if (result && typeof result.then === 'function') {
-          await result;
-        }
+        await Promise.resolve(typeof handler === 'function' ? handler(msg, match) : undefined);
       } catch (err) {
         console.error('[guard] unhandled error in handler:', err.message, err.stack);
         bot.sendMessage(msg.chat.id, `❌ Unexpected error: ${err.message}`).catch(() => { });
@@ -1429,7 +1426,7 @@ function register(bot) {
     return executeIntent(bot, m, { intent: 'summarize_url', lang: 'pl', params: { url } });
   }));
 
-  bot.on('message', guard(m => {
+  bot.on('message', guard(async m => {
     // Voice message
     if (m.voice) return handleVoice(bot, m);
     // Photo message
