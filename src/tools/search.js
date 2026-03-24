@@ -74,30 +74,45 @@ async function ddgSearch(query, maxResults = 3) {
 
 // ─── Serper News ──────────────────────────────────────────────────────────────
 
-/**
- * Fetch news headlines using Serper's /news endpoint.
- * Returns formatted text ready to send to the user — no LLM needed.
- * @param {string} query
- * @param {number} maxResults
- * @returns {Promise<string>}
- */
+const NEWS_DOMAINS = {
+  local:   ['gazetalubuska.pl', 'wzielonej.pl', 'zielonanews.pl', 'rzg.pl'],
+  country: ['tvn24.pl', 'rmf24.pl', 'onet.pl', 'wp.pl', 'interia.pl', 'rp.pl'],
+  world:   ['reuters.com', 'bbc.com', 'cnn.com', 'theguardian.com', 'dw.com'],
+  tech:    ['spidersweb.pl', 'dobreprogramy.pl', 'theverge.com', 'techcrunch.com', 'wired.com', 'engadget.com']
+};
+
 /**
  * Strip Polish/English command verbs from a news query so they don't pollute search results.
- * "Podaj wiadomości z kraju" → "wiadomości z kraju"  (avoids matching "PODAJ DALEJ" foundation)
  */
 function cleanNewsQuery(query) {
+  if (!query) return '';
   const cleaned = query
     .replace(/^(podaj|pokaż|pokaż mi|daj|daj mi|podajcie|sprawdź|check out|show me|give me|co to są|jakie są|co nowego w|co nowego z)\s+/i, '')
     .trim();
   return cleaned || query;
 }
 
-async function serperNewsSearch(query, maxResults = 5) {
+/**
+ * Fetch news headlines using Serper's /news endpoint.
+ * Supports domain whitelisting via 'category'.
+ * @param {string} query
+ * @param {number} maxResults
+ * @param {'local'|'country'|'world'|'tech'} [category]
+ * @returns {Promise<string>}
+ */
+async function serperNewsSearch(query, maxResults = 5, category = null) {
   try {
-    const q = cleanNewsQuery(query);
+    let q = cleanNewsQuery(query);
+    
+    // Apply domain whitelisting if category is specified
+    if (category && NEWS_DOMAINS[category]) {
+      const sites = NEWS_DOMAINS[category].map(s => `site:${s}`).join(' OR ');
+      q = `(${sites}) ${q}`.trim();
+    }
+
     const res = await axios.post(
       'https://google.serper.dev/news',
-      { q, num: maxResults, tbs: 'qdr:w' },  // past week, global results
+      { q, num: maxResults, tbs: 'qdr:d' }, // past 24h for freshness
       {
         headers: {
           'X-API-KEY': process.env.SERPER_API_KEY,
@@ -113,16 +128,40 @@ async function serperNewsSearch(query, maxResults = 5) {
     const lines = hits.map((r, i) => {
       const date = r.date ? ` _(${r.date})_` : '';
       const source = r.source ? `*${r.source}*` : '';
+      const title = (r.title || 'No title').replace(/[\[\]\(\)]/g, ''); // Basic sanitization for Markdown links
       const snippet = (r.snippet || '').slice(0, 180);
-      return `${i + 1}. [${r.title}](${r.link})${date}\n   ${source}${snippet ? ' — ' + snippet : ''}`;
+      return `${i + 1}. [${title}](${r.link})${date}\n   ${source}${snippet ? ' — ' + snippet : ''}`;
     });
 
-    return `📰 *${q}*\n\n${lines.join('\n\n')}`;
+    const header = category ? `📰 *${category.toUpperCase()} NEWS: ${query}*` : `📰 *${query}*`;
+    return `${header}\n\n${lines.join('\n\n')}`;
   } catch (err) {
     if (err.response?.status === 429) {
-      return `[Rate limit exceeded for Serper News API. Please try again later or check your SERPER_API_KEY quota.]`;
+      return `[Rate limit exceeded for Serper News API.]`;
     }
     throw err;
+  }
+}
+
+/**
+ * Multi-source overview: Local, Country, World.
+ */
+async function getNewsDigest(query = 'najważniejsze wiadomości') {
+  try {
+    const results = await Promise.allSettled([
+      serperNewsSearch('Zielona Góra', 3, 'local'),
+      serperNewsSearch('Polska', 3, 'country'),
+      serperNewsSearch('World', 3, 'world')
+    ]);
+
+    const sections = results.map((res, i) => {
+      if (res.status === 'fulfilled') return res.value;
+      return `❌ Błąd w kategorii ${['Lokalne', 'Krajowe', 'Świat'][i]}: ${res.reason.message}`;
+    });
+
+    return `🗓️ *CODZIENNY PRZEGLĄD WIADOMOŚCI*\n_${new Date().toLocaleDateString('pl-PL')}_\n\n${sections.join('\n\n---\n\n')}`;
+  } catch (err) {
+    return `❌ Nie udało się wygenerować przeglądu: ${err.message}`;
   }
 }
 

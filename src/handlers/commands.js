@@ -1225,14 +1225,31 @@ async function handleMessage(bot, msg, { forceChat = false } = {}) {
     }
 
     // News queries: show Serper news results directly — LLM hallucinates entire articles
-    if (routeResult.params?.subtype === 'news') {
+    if (routeResult.params?.subtype === 'news' || /\b(wiadomo[śs]ci|news|aktualno[śs]ci)\b/i.test(text)) {
       try {
-        await bot.sendMessage(chatId, '📰 Szukam wiadomości...');
+        const isDigest = /\b(przeg[lł][aą]d|podsumowanie|digest|dzisiejsze|co\s+nowego)\b/i.test(text);
+        
+        if (isDigest) {
+          await bot.sendMessage(chatId, '🗞️ Przygotowuję codzienny przegląd wiadomości...');
+          const digestText = await search.getNewsDigest();
+          return sendLong(bot, chatId, digestText, { parse_mode: 'Markdown', disable_web_page_preview: true });
+        }
+
+        // Categorical detection
+        let category = null;
+        let categoryName = 'wiadomości';
+        if (/\b(lokalne|zielonej|górze|lubuskie)\b/i.test(text)) { category = 'local'; categoryName = 'lokalne'; }
+        else if (/\b(kraju|polsce|polska|krajowe)\b/i.test(text)) { category = 'country'; categoryName = 'z kraju'; }
+        else if (/\b([śs]wiata|[śs]wiatowe|zagraniczne)\b/i.test(text)) { category = 'world'; categoryName = 'ze świata'; }
+        else if (/\b(technolog|tech|komputer|gadżet)\b/i.test(text)) { category = 'tech'; categoryName = 'technologiczne'; }
+
+        await bot.sendMessage(chatId, `📰 Szukam wiadomości (${categoryName})...`);
         if (process.env.SERPER_API_KEY) {
-          const newsText = await search.serperNewsSearch(text);
+          const newsText = await search.serperNewsSearch(text, 5, category);
           return sendLong(bot, chatId, newsText, { parse_mode: 'Markdown', disable_web_page_preview: true });
         }
-        // No Serper key — fallback to generic search shown directly
+        
+        // No Serper key — fallback to generic search
         const rawResults = await search.webSearch(text);
         return sendLong(bot, chatId, rawResults.replace(/\*\*/g, '*'), { parse_mode: 'Markdown', disable_web_page_preview: true });
       } catch (err) {

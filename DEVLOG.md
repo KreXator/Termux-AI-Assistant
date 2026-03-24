@@ -1,5 +1,25 @@
 # DEVLOG — Termux AI Assistant
 
+## 2026-03-24 — Session 5: News Categorization & Quality
+
+### Files changed
+- **`src/tools/search.js`** — Added `NEWS_DOMAINS` whitelisting; refactored `serperNewsSearch` to support categories; added `getNewsDigest` (local/country/world).
+- **`src/handlers/commands.js`** — Updated news routing to detect categories (local, country, world, tech) and trigger digest mode.
+- **`src/handlers/nlRouter.js`** — Added "technologiczne" to news precheck for better routing.
+
+### Key behavior changes
+- **Skills**: Bot now understands "wiadomości lokalne", "wiadomości ze świata", "technologia" as distinct skills.
+- **Quality**: Results are site-filtered (TVN24, RMF24, BBC, Gazeta Lubuska), eliminating TV schedule "noise".
+- **Digest**: "przegląd wiadomości" now triggers a structured 3-category report.
+- **Freshness**: Forced 24h window (`qdr:d`) for all news tool calls.
+
+### Commits
+- `c7a10be` — feat: categorical news skills with domain whitelisting and digest mode
+
+### Pending
+- Monitor Serper quota (digest uses 3 calls).
+- Test tech news specifically for source relevance.
+
 ## 2026-03-24 — Session 4: Reliability — Guard fix & robust handlers
 
 ### Files changed
@@ -10,7 +30,7 @@
 - **Robustness**: Any handler wrapped in `guard` that returns `undefined` or a non-promise value is now safely handled.
 
 ### Commits
-- `[pending]` — fix: robust guard handler to prevent TypeError on undefined return
+- `9030b9e` — fix: robust guard handler to prevent TypeError on undefined return
 
 ### Pending
 - Test `/schedule test` on Railway to verify routing works in production
