@@ -9,9 +9,33 @@
  */
 'use strict';
 
-const cron   = require('node-cron');
-const db     = require('../db/database');
-const search = require('../tools/search');
+const cron    = require('node-cron');
+const db      = require('../db/database');
+const search  = require('../tools/search');
+const weather = require('../tools/weather');
+
+// ─── Query routing ────────────────────────────────────────────────────────────
+
+const WEATHER_RE = /^pogoda\s+(.+)/i;
+const NEWS_RE    = /wiadomoś|aktualnoś|news|przegląd/i;
+const JOBS_RE    = /pracuj\.pl|oferty\s+pracy|ogłoszenia\s+pracy/i;
+
+/**
+ * Route a scheduled query to the best handler based on its content.
+ */
+async function executeQuery(query) {
+  const weatherMatch = WEATHER_RE.exec(query);
+  if (weatherMatch) {
+    return await weather.getWeather(weatherMatch[1].trim());
+  }
+  if (NEWS_RE.test(query)) {
+    return await search.serperNewsSearch(query, 5);
+  }
+  if (JOBS_RE.test(query)) {
+    return await search.serperJobsSearch(query, 5);
+  }
+  return await search.webSearch(query, 5);
+}
 
 // Map of scheduleId → cron.ScheduledTask
 const activeTasks = new Map();
@@ -49,7 +73,7 @@ function startTask(schedule) {
   const task = cron.schedule(expr, async () => {
     console.log(`[scheduler] Running: "${schedule.query}" for chatId=${schedule.chatId}`);
     try {
-      const results = await search.webSearch(schedule.query, 5);
+      const results = await executeQuery(schedule.query);
       const header  = `🔔 *Scheduled alert* — _${schedule.query}_\n\n`;
       await sendLong(schedule.chatId, header + results);
     } catch (err) {
@@ -112,7 +136,7 @@ function remove(scheduleId) {
  */
 async function runNow(schedule) {
   console.log(`[scheduler] Running NOW: "${schedule.query}" for chatId=${schedule.chatId}`);
-  const results = await search.webSearch(schedule.query, 5);
+  const results = await executeQuery(schedule.query);
   const header  = `🔔 *Test run* — _${schedule.query}_\n\n`;
   await sendLong(schedule.chatId, header + results);
 }

@@ -112,6 +112,52 @@ async function serperNewsSearch(query, maxResults = 5) {
   return `📰 *${q}*\n\n${lines.join('\n\n')}`;
 }
 
+// ─── Serper Jobs ──────────────────────────────────────────────────────────────
+
+/**
+ * Search job listings via Serper's /search endpoint with Polish locale.
+ * Handles Google Jobs cards (`res.data.jobs`) when present, falls back to organic.
+ * @param {string} query
+ * @param {number} maxResults
+ * @returns {Promise<string>}
+ */
+async function serperJobsSearch(query, maxResults = 5) {
+  const res = await axios.post(
+    'https://google.serper.dev/search',
+    { q: query, num: maxResults, gl: 'pl', hl: 'pl' },
+    {
+      headers: {
+        'X-API-KEY': process.env.SERPER_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      timeout: 10_000,
+    }
+  );
+
+  // Google Jobs cards (Serper may include these for job queries)
+  const jobCards = res.data.jobs || [];
+  if (jobCards.length) {
+    const lines = jobCards.slice(0, maxResults).map((j, i) => {
+      const salary   = j.salary       ? ` · *${j.salary}*`       : '';
+      const location = j.location     ? ` · 📍 ${j.location}`    : '';
+      const via      = j.via          ? ` · ${j.via}`             : '';
+      const link     = (j.applyOptions?.[0]?.link) || j.shareLink || '';
+      return `${i + 1}. *${j.title}*\n   ${j.companyName || ''}${salary}${location}${via}${link ? '\n   ' + link : ''}`;
+    });
+    return `💼 *${query}*\n\n${lines.join('\n\n')}`;
+  }
+
+  // Fallback: organic results with job-focused formatting
+  const hits = (res.data.organic || []).slice(0, maxResults);
+  if (!hits.length) return `[Brak wyników dla: "${query}"]`;
+
+  const lines = hits.map((r, i) => {
+    const snippet = (r.snippet || '').slice(0, 200);
+    return `${i + 1}. [${r.title}](${r.link})\n   ${snippet}`;
+  });
+  return `💼 *${query}*\n\n${lines.join('\n\n')}`;
+}
+
 // ─── Unified entry point ──────────────────────────────────────────────────────
 
 /**
@@ -132,4 +178,4 @@ async function webSearch(query, maxResults = 3) {
   }
 }
 
-module.exports = { webSearch, serperNewsSearch };
+module.exports = { webSearch, serperNewsSearch, serperJobsSearch };
