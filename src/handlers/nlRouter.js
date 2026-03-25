@@ -224,7 +224,7 @@ const LIST_PRECHECK = [
   { re: /\b(moja\s+)?pamięć\b|\bzapamiętane\b|\bpokaż\s+pamięć\b/i,                     intent: 'list_memory'    },
   { re: /\bzaplanowane\s+wyszukiwania\b|\bpokaż\s+(harmonogram|schedule)\b/i,             intent: 'list_schedules' },
   { re: /\b(moje\s+)?feedy\b|\blista\s+feedów\b|\bpokaż\s+(feedy|feed[sy]?\s+rss)\b/i,   intent: 'list_feeds'     },
-  { re: /^(?:przypomnij|remind|alert|alarm)\s+(?:mi\s+)?(?:o\s+)?(.+)$/i,               intent: 'remind'         },
+  { re: /^(?:przypomnij|remind|alert|alarm|dodaj\s+przypomnienie|nowe\s+przypomnienie|ustaw\s+alarm|ustaw\s+przypomnienie)\s+(?:mi\s+)?(?:o\s+)?(.+)$/i, intent: 'remind' },
 ];
 
 // "zaplanuj X" where X is NOT a scheduled-search — force to chat
@@ -294,12 +294,13 @@ function precheck(text) {
   for (const { re, intent } of LIST_PRECHECK) {
     if (re.test(text)) {
       if (intent === 'remind') {
-        const m = /^(?:przypomnij|remind|alert|alarm)(?:\s+mi)?(?:\s+o)?\s+(.+)$/i.exec(text);
+        const m = /^(?:przypomnij|remind|alert|alarm|dodaj\s+przypomnienie|nowe\s+przypomnienie|ustaw\s+alarm|ustaw\s+przypomnienie)(?:\s+mi)?(?:\s+o)?[:\s]+\s*(.+)$/i.exec(text);
         if (m) {
           const content = m[1].trim();
           // Simple split: "30min o spotkaniu" or "jutro 19:00 ryby"
           // We look for time-like prefixes: "za", "o", or raw HH:MM / relative dates
-          const timeMatch = /^(?:za\s+|o\s+)?(\d+[hms]|\d{1,2}:\d{2}|jutro|today|tomorrow|dzisiaj|pojutrze)(?:\s+(?:o\s+)?(.+))?$/i.exec(content);
+          // Combined: "jutro 19:00", "tomorrow o 5pm"
+          const timeMatch = /^(?:za\s+|o\s+)?((?:jutro|tomorrow|today|dzisiaj|pojutrze)(?:\s+(?:o\s+)?\d{1,2}:\d{2}(?:\s*(?:am|pm))?)?|\d+[hms]|\d{1,2}:\d{2})(?:\s+(?:o\s+)?(.+))?$/i.exec(content);
           if (timeMatch) {
             return {
               type: 'bot_command',

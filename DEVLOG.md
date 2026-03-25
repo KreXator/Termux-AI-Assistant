@@ -8,9 +8,10 @@
 - **`config/personas.json`** — Updated `default` persona with a strict **ANTI-HALLUCINATION RULE** (interface-only behavior).
 
 ### Key behavior changes
-- **Reliable Reminders**: Commands like "przypomnij jutro o 19:00" now work correctly and bypass LLM classification for 100% reliability.
+- **Reliable Reminders**: Commands like "przypomnij jutro o 19:00" and "Dodaj przypomnienie: ..." now work correctly and bypass LLM classification for 100% reliability.
 - **Zero Hallucination**: The bot no longer "simulates" setting a reminder if the tool is not triggered; it now explicitly reports system status or errors.
-- **Deterministic Routing**: Unified reminder patterns are handled by regex before reaching the LLM, preventing misclassification as `chat` or `web_search`.
+- **Improved Extraction**: Added regex support for optional colons and combined "day + time" expressions (e.g., "jutro 19:00"), ensuring they are correctly split into `when` and `text`.
+- **Deterministic Routing**: Expanded trigger keywords (dodaj/ustaw przypomnienie/alarm) to prevent misclassification as `web_search`.
 
 ### Commits
 - `fix: anti-hallucination guardrails and robust "jutro" reminder parsing`
