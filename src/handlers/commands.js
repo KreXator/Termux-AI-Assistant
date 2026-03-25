@@ -1001,11 +1001,12 @@ async function executeIntent(bot, msg, intent) {
     }
 
     case 'remind': {
-      const { when, text: reminderText } = params;
+      const { when, text: reminderText, _raw } = params;
       if (!when) {
+        const sample = _raw ? ` (np. "${_raw}")` : '';
         await bot.sendMessage(chatId,
-          t(lang, '⚠️ Could not parse the time. Try: "remind me in 30min about meeting"',
-            '⚠️ Nie rozpoznałem czasu. Spróbuj: "przypomnij mi za 30min o spotkaniu"'));
+          t(lang, `⚠️ Could not parse the time. Try: "remind me in 30min about meeting"`,
+            `⚠️ Nie rozpoznałem czasu${sample}. Spróbuj: "przypomnij mi za 30min o spotkaniu"`));
         return true;
       }
       const delayMs = reminder.parseTime(when);
