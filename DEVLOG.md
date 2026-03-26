@@ -1,5 +1,27 @@
 # DEVLOG — Termux AI Assistant
 
+## 2026-03-26 — Session 12: NLP overhaul — Polish ordinals, daily reminders, multiline todos
+
+### Files changed
+- `src/tools/reminder.js` — Added `POLISH_ORDINALS` constant; `parseTime()` now handles Polish ordinal hours ("dziewiętnastej"→19:00), DD.MM.YYYY and DD.MM date formats
+- `src/handlers/nlRouter.js` — Added `normalizeOrdinalTime()` helper; `remind` precheck now strips ordinals before HH:MM extraction; `todo_add`/`note_add` regexes use `[\s\S]+` for multiline + handle plural "zadania"; allow optional adjective between verb and noun (e.g. "codzienne"); added `remind_daily` intent with `isDaily` detection and frequency-word stripping; added `remind_daily` to `KNOWN_INTENTS` and SYSTEM_PROMPT
+- `src/scheduler/scheduler.js` — `executeQuery()` detects `[REMINDER] ` prefix → returns text directly (no search); cron task and `runNow` use ⏰ header for reminder type
+- `src/handlers/commands.js` — `todo_add` splits multiline/bullet tasks → multiple DB inserts; added `remind_daily` case (stores `[REMINDER] text` query + schedules cron); `handleScheduleList` renders ⏰ for reminders vs 🕐 for searches; `remind_daily` added to `AUTO_EXECUTE_INTENTS`
+- `index.js` — 400ms grace period in SIGTERM/SIGINT handlers (prevents in-flight `persist()` writes from being lost on Railway deploy)
+- `test/nl_routing_test.js` — 65 test cases (was 58), all passing
+
+### Key behavior changes
+- **Polish voice commands work**: "przypomnij mi jutro o dziewiętnastej" → sets reminder for tomorrow 19:00
+- **Daily reminders**: "Ustaw codzienne przypomnienie: karmienie rybek o 18:00" → cron fires daily at 18:00, sends ⏰ text (no web search)
+- **Multiline todos**: "dodaj zadania:\n- mleko\n- chleb" → 2 separate DB entries
+- **Reminder persistence**: 400ms grace ensures reminders survive Railway redeploys
+
+### Commits
+- `3e6092c` fix(nlp): Polish ordinals, DD.MM.YYYY, multiline todos, SIGTERM grace
+- `abcc2f4` feat(nlp): daily reminders via codziennie + fix ustaw codzienne przypomnienie
+
+---
+
 ## 2026-03-25 — Session 11: Automated Database Backups
 - **Files changed**:
   - `scripts/backup_db.js` (NEW) — Headless Turso JSON export.
