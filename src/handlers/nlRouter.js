@@ -80,8 +80,8 @@ const NAV_SEARCH_RE = /\b(jak\s+(?:dojecha[ćc]|dojad[ęe]|dotrze[ćc]|doj[śs][
 const LIST_PRECHECK = [
   // 1. Additions (Specific content patterns)
   { re: /^(?:przypomnij|remind|alert|alarm|dodaj\s+przypomnienie|nowe\s+przypomnienie|ustaw\s+alarm|ustaw\s+przypomnienie)(?:\s+mi)?(?:\s+o)?[:\s]+\s*(.+)$/i, intent: 'remind' },
-  { re: /^(?:dodaj|zapisz|nowe|nowa|nową|add|new)\s+(?:zadanie|task|todo)[:\s]+\s*(.+)$/i,       intent: 'todo_add'       },
-  { re: /^(?:dodaj|zapisz|nowe|nowa|nową|add|new)\s+(?:notatk[aęę]?|note)[:\s]+\s*(.+)$/i,           intent: 'note_add'       },
+  { re: /^(?:dodaj|zapisz|nowe|nowa|nową|add|new)\s+(?:zadani[ae]|tasks?|todos?)[:\s]+\s*([\s\S]+)$/i,       intent: 'todo_add'       },
+  { re: /^(?:dodaj|zapisz|nowe|nowa|nową|add|new)\s+(?:notatk[aęę]?|note)[:\s]+\s*([\s\S]+)$/i,           intent: 'note_add'       },
   { re: /^(?:zapamiętaj|remember|zanotuj|fact|zapisz\s+fakt)[:\s]+\s*(.+)$/i,          intent: 'remember'       },
 
   // 2. State toggles
@@ -103,6 +103,35 @@ const LIST_PRECHECK = [
   { re: /(?:^|\s)(zaktualizuj|aktualizuj|update)\s+(system|bota|bot|kod)(?:\s|$)/i,                intent: 'system_update'  },
 ];
 
+// ─── Polish ordinal hour normalizer ───────────────────────────────────────────
+// Converts e.g. "jutro o dziewiętnastej" → "jutro 19:00" so existing HH:MM
+// patterns can handle it without expanding every downstream regex.
+const ORDINAL_MAP = [
+  ['dwudziestej czwartej', '0:00'],  ['dwudziestej trzeciej', '23:00'],
+  ['dwudziestej drugiej', '22:00'],  ['dwudziestej pierwszej', '21:00'],
+  ['dwudziestej', '20:00'],          ['dziewiętnastej', '19:00'],
+  ['osiemnastej', '18:00'],          ['siedemnastej', '17:00'],
+  ['szesnastej', '16:00'],           ['piętnastej', '15:00'],
+  ['czternastej', '14:00'],          ['trzynastej', '13:00'],
+  ['dwunastej', '12:00'],            ['jedenastej', '11:00'],
+  ['dziesiątej', '10:00'],           ['dziewiątej', '9:00'],
+  ['ósmej', '8:00'],                 ['siódmej', '7:00'],
+  ['szóstej', '6:00'],               ['piątej', '5:00'],
+  ['czwartej', '4:00'],              ['trzeciej', '3:00'],
+  ['drugiej', '2:00'],               ['pierwszej', '1:00'],
+  ['północy', '0:00'],               ['południa', '12:00'],
+];
+
+function normalizeOrdinalTime(text) {
+  const lower = text.toLowerCase();
+  for (const [ordinal, time] of ORDINAL_MAP) {
+    if (lower.includes(ordinal)) {
+      return text.replace(new RegExp(ordinal, 'i'), time);
+    }
+  }
+  return text;
+}
+
 const CHAT_OVERRIDE = /\bzaplanuj\b.{0,40}\b(trasę|wyjazd|dzień|projekt|menu|wakacje|podróż|weekend|wycieczkę|aktywność|czas|tydzień)\b/i;
 const SCHEDULE_ADD_RE = /\bzaplanuj\b.{0,100}\bo\s+(\d{1,2}:\d{2})\b/i;
 
@@ -113,10 +142,12 @@ function precheck(text) {
   for (const { re, intent } of LIST_PRECHECK) {
     if (re.test(text)) {
       if (intent === 'remind') {
-        const m = /^(?:przypomnij|remind|alert|alarm|dodaj\s+przypomnienie|nowe\s+przypomnienie|ustaw\s+alarm|ustaw\s+przypomnienie)(?:\s+mi)?(?:\s+o)?[:\s]+\s*(.+)$/i.exec(text);
+        const m = /^(?:przypomnij|remind|alert|alarm|dodaj\s+przypomnienie|nowe\s+przypomnienie|ustaw\s+alarm|ustaw\s+przypomnienie)(?:\s+mi)?(?:\s+o)?[:\s]+\s*([\s\S]+)$/i.exec(text);
         if (m) {
-          const content = m[1].trim();
-          const timeMatch = /^(?:za\s+|o\s+|na\s+)?((?:jutro|tomorrow|today|dzisiaj|pojutrze)(?:\s+(?:o\s+)?\d{1,2}:\d{2}(?:\s*(?:am|pm))?)?|\d+[hms]|\d{1,2}:\d{2})(?:\s+(?:o\s+)?(.+))?$/i.exec(content);
+          // Normalize Polish ordinal hours → HH:MM before regex matching
+          const content = normalizeOrdinalTime(m[1].trim());
+          // Also handle DD.MM.YYYY / DD.MM date formats
+          const timeMatch = /^(?:za\s+|o\s+|na\s+)?((?:jutro|tomorrow|today|dzisiaj|pojutrze)(?:\s+(?:o\s+)?(?:\d{1,2}:\d{2}|\d{1,2}\.\d{2}(?:\.\d{4})?)(?:\s*(?:am|pm))?)?|\d+[hms]|\d{1,2}:\d{2}|\d{1,2}\.\d{2}(?:\.\d{4})?)(?:\s+(?:o\s+)?(.+))?$/i.exec(content);
           if (timeMatch) {
             return {
               type: 'bot_command',
@@ -148,7 +179,7 @@ function precheck(text) {
         }
       }
       if (intent === 'todo_add' || intent === 'note_add' || intent === 'remember') {
-        const m = /^(?:dodaj|zapisz|nowe|nowa|nową|add|new|zapamiętaj|remember|zanotuj|fact|zapisz\s+fakt)\s+(?:zadanie|task|todo|notatk[aęę]?|note|że|that)?[:\s]+\s*(.+)$/i.exec(text);
+        const m = /^(?:dodaj|zapisz|nowe|nowa|nową|add|new|zapamiętaj|remember|zanotuj|fact|zapisz\s+fakt)\s+(?:zadani[ae]|task|todo|notatk[aęę]?|note|że|that)?[:\s]+\s*([\s\S]+)$/i.exec(text);
         if (m) {
           const content = m[1].trim();
           let p = {};

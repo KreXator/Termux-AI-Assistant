@@ -122,9 +122,10 @@ async function main() {
     await notifyReady(bot);
   }
 
-  // Graceful shutdown
-  process.once('SIGINT',  () => lock.release(instanceId).then(() => process.exit(0)));
-  process.once('SIGTERM', () => lock.release(instanceId).then(() => process.exit(0)));
+  // Graceful shutdown — small grace period lets in-flight DB writes (persist) finish
+  const shutdown = () => lock.release(instanceId).then(() => setTimeout(() => process.exit(0), 400));
+  process.once('SIGINT',  shutdown);
+  process.once('SIGTERM', shutdown);
 
   const searchMode = process.env.SERPER_API_KEY ? 'Serper (Google)' : 'DuckDuckGo (fallback)';
 

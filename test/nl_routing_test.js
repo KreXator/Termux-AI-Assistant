@@ -85,6 +85,14 @@ const testCases = [
   { text: 'aktualizuj bota', expected: { intent: 'system_update' } },
   { text: 'zaktualizuj kod', expected: { intent: 'system_update' } },
 
+  // Polish ordinal hours in remind (ordinals get normalized to HH:MM before capture)
+  { text: 'przypomnij mi jutro o dziewiętnastej zadzwonić do mamy', expected: { intent: 'remind', params: { when: 'jutro o 19:00', text: 'zadzwonić do mamy' } } },
+  { text: 'Dodaj przypomnienie: jutro o osiemnastej spotkanie z Kamilem', expected: { intent: 'remind', params: { when: 'jutro o 18:00', text: 'spotkanie z Kamilem' } } },
+  { text: 'przypomnij o dwudziestej pierwszej leki', expected: { intent: 'remind', params: { when: '21:00', text: 'leki' } } },
+
+  // Multiline / bullet todo
+  { text: 'dodaj zadania:\n- kupić mleko\n- kupić chleb', expected: { intent: 'todo_add', params: { task: '- kupić mleko\n- kupić chleb' } } },
+
   // Fallbacks
   { text: 'Co tam u Ciebie?', expectedType: 'chat' },
   { text: 'Jaka jest dzisiaj pogoda w Berlinie?', expectedType: 'web_search' },

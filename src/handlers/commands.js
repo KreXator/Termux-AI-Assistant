@@ -1049,8 +1049,19 @@ async function executeIntent(bot, msg, intent) {
         await bot.sendMessage(chatId, t(lang, '⚠️ Task text missing.', '⚠️ Brak treści zadania.'));
         return true;
       }
-      await db.addTodo(userId, task);
-      await bot.sendMessage(chatId, `✅ ${t(lang, 'Task added!', 'Zadanie dodane!')}`);
+      // Split multiline / bullet-list input into individual tasks
+      const lines = task
+        .split('\n')
+        .map(l => l.replace(/^[\s\-\*\•]+/, '').trim())
+        .filter(l => l.length > 0);
+      for (const line of lines) {
+        await db.addTodo(userId, line);
+      }
+      const added = lines.length;
+      await bot.sendMessage(chatId,
+        added > 1
+          ? `✅ ${t(lang, `Added ${added} tasks!`, `Dodano ${added} zadania!`)}`
+          : `✅ ${t(lang, 'Task added!', 'Zadanie dodane!')}`);
       return true;
     }
 

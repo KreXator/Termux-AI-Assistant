@@ -21,6 +21,37 @@ let initialized = false;
 
 // ─── Time parsing ─────────────────────────────────────────────────────────────
 
+// Polish ordinal feminine genitive hours ("o dziewiętnastej" = 19:00)
+// Sorted longest-first so two-word entries match before single-word ones.
+const POLISH_ORDINALS = [
+  ['dwudziestej czwartej', 0],
+  ['dwudziestej trzeciej', 23],
+  ['dwudziestej drugiej', 22],
+  ['dwudziestej pierwszej', 21],
+  ['dwudziestej', 20],
+  ['dziewiętnastej', 19],
+  ['osiemnastej', 18],
+  ['siedemnastej', 17],
+  ['szesnastej', 16],
+  ['piętnastej', 15],
+  ['czternastej', 14],
+  ['trzynastej', 13],
+  ['dwunastej', 12],
+  ['jedenastej', 11],
+  ['dziesiątej', 10],
+  ['dziewiątej', 9],
+  ['ósmej', 8],
+  ['siódmej', 7],
+  ['szóstej', 6],
+  ['piątej', 5],
+  ['czwartej', 4],
+  ['trzeciej', 3],
+  ['drugiej', 2],
+  ['pierwszej', 1],
+  ['północy', 0],
+  ['południa', 12],
+];
+
 /**
  * Parse a time string into milliseconds from now.
  * Returns null if the format is not recognised.
@@ -43,7 +74,20 @@ function parseTime(str) {
     return val * 60 * 1000; // default min
   }
 
-  // 2. Absolute / Relative Day parsing
+  // 2. DD.MM.YYYY or DD.MM date (e.g. "4.04.2026 19:00" or "04.04 19:00")
+  const dmyMatch = s.match(/^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\s*(?:o\s+)?(?:(\d{1,2}):(\d{2}))?$/);
+  if (dmyMatch) {
+    const day   = parseInt(dmyMatch[1]);
+    const month = parseInt(dmyMatch[2]) - 1; // 0-indexed
+    const year  = dmyMatch[3] ? parseInt(dmyMatch[3]) : new Date().getFullYear();
+    const hours = dmyMatch[4] != null ? parseInt(dmyMatch[4]) : 0;
+    const mins  = dmyMatch[5] != null ? parseInt(dmyMatch[5]) : 0;
+    const target = new Date(year, month, day, hours, mins, 0, 0);
+    const delay  = target.getTime() - Date.now();
+    return delay > 0 ? delay : null;
+  }
+
+  // 3. Absolute / Relative Day parsing
   // Normalize string: "jutro o 19:00" -> "jutro 19:00"
   let clean = s.replace(/\bo\b/g, '').replace(/\s+/g, ' ');
   
@@ -63,6 +107,19 @@ function parseTime(str) {
     timeStr = clean.replace(/pojutrze/g, '').trim();
   } else if (hasDzisiaj) {
     timeStr = clean.replace(/dzisiaj|today/g, '').trim();
+  }
+
+  // Check for Polish ordinal hour (e.g. "dziewiętnastej", "dwudziestej pierwszej")
+  for (const [ordinal, hour] of POLISH_ORDINALS) {
+    if (timeStr.includes(ordinal)) {
+      targetDate.setHours(hour, 0, 0, 0);
+      const isRelativeDayMentioned = hasJutro || hasPojutrze || hasDzisiaj;
+      if (!isRelativeDayMentioned && targetDate.getTime() < Date.now()) {
+        targetDate.setDate(targetDate.getDate() + 1);
+      }
+      const delay = targetDate.getTime() - Date.now();
+      return delay > 0 ? delay : null;
+    }
   }
 
   // Parse time part (HH:MM or HH)
